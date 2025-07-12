@@ -19,15 +19,20 @@ def generate_launch_description():
         .joint_limits(file_path="config/joint_limits.yaml")
         .pilz_cartesian_limits(file_path="config/pilz_cartesian_limits.yaml")
         .trajectory_execution(file_path="config/mycobot_280/moveit_controllers.yaml")
-        .moveit_cpp(file_path="config/planning_python_api.yaml")  # this must exist
+        # .moveit_cpp(file_path="config/planning_python_api.yaml")  # this must exist
+        .moveit_cpp(
+            file_path=get_package_share_directory("mycobot_moveit_config")
+            + "/config/planning_python_api.yaml"
+        )
         .to_moveit_configs()
     )
 
 
     api_server = Node(
+        name="moveit_py",
         package="mycobot_python_api",
         executable="moveit_http_server",
-        output="screen",
+        output="both",
         parameters=[moveit_config.to_dict(), {"use_sim_time": True}]
     )
 

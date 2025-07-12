@@ -30,15 +30,15 @@ def move_to_xyz():
     goal.pose.orientation.w = 1.0
 
     planning_component.set_goal_state(pose_stamped_msg=goal,
-                                      pose_link="link6_flange")
+                                      pose_link="gripper_base")
 
     # params = PlanRequestParameters(moveit, "ompl")  # MoveItPy instance + pipeline
     # params.planning_time = 5.0                      # 5 s planning timeout
 
+    # initialise multi-pipeline plan request parameters
     multi_plan_parameters = MultiPipelinePlanRequestParameters(
-        moveit, ["ompl"] #
+            moveit, ["ompl_rrtc", "pilz_lin", "chomp", "ompl_rrt_star"]
     )
-
 
     plan_result = planning_component.plan(
         multi_plan_parameters=multi_plan_parameters
@@ -51,6 +51,7 @@ def move_to_xyz():
         planning_component.execute()
         return jsonify({"status": "success"}), 200
     return jsonify({"status": "planning_failed"}), 500
+
 
 def main():
     global moveit, planning_component
