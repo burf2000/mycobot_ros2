@@ -36,7 +36,7 @@ def move_to_xyz():
     # params.planning_time = 5.0                      # 5 s planning timeout
 
     multi_plan_parameters = MultiPipelinePlanRequestParameters(
-        moveit, ["ompl"] #, "pilz_lin", "chomp_planner"
+        moveit, ["ompl"] #
     )
 
 
