@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from tf_transformations import quaternion_from_euler, euler_from_quaternion
 from moveit.core.robot_state import RobotState
 from moveit.core.kinematic_constraints import construct_joint_constraint
 # moveit python library
@@ -53,9 +54,24 @@ def move_to_xyz():
     if None in (x, y, z):
         return jsonify({"error": "Missing x/y/z"}), 400
 
+     # optional: quaternion or Euler angles
+    if {"qx","qy","qz","qw"}.issubset(data):
+        qx, qy, qz, qw = map(float, (data["qx"], data["qy"], data["qz"], data["qw"]))
+    elif {"roll","pitch","yaw"}.issubset(data):
+        import math
+        roll, pitch, yaw = map(float, (data["roll"], data["pitch"], data["yaw"]))
+        qx, qy, qz, qw = quaternion_from_euler(roll, pitch, yaw)
+    else:
+        # default to no rotation
+        qx = qy = qz = 0.0
+        qw = 1.0
+
     pose_goal = PoseStamped()
     pose_goal.header.frame_id = "base_link"
-    pose_goal.pose.orientation.w = 1.0
+    pose_goal.pose.orientation.w = qw
+    pose_goal.pose.orientation.x = qx
+    pose_goal.pose.orientation.y = qy
+    pose_goal.pose.orientation.z = qz
     pose_goal.pose.position.x = x
     pose_goal.pose.position.y = y
     pose_goal.pose.position.z = z
@@ -67,6 +83,24 @@ def move_to_xyz():
 
     if plan_result and robot_trajectory:
         moveit.execute(robot_trajectory, controllers=[])
+
+        # last_idx = len(robot_trajectory) - 1
+        # final_state = robot_trajectory[last_idx]
+        # tf = final_state.get_global_link_transform("gripper_base")
+        # pos = tf.translation
+        # rot = tf.rotation
+        # from tf_transformations import euler_from_quaternion
+        # roll, pitch, yaw = euler_from_quaternion([rot.x, rot.y, rot.z, rot.w])
+
+        # return jsonify({
+        #     "status": "success",
+        #     "end_effector": {
+        #         "position": {"x": pos.x, "y": pos.y, "z": pos.z},
+        #         "orientation_euler": {"roll": roll, "pitch": pitch, "yaw": yaw},
+        #         "orientation_quat": {"x": rot.x, "y": rot.y, "z": rot.z, "w": rot.w}
+        #     }
+        # }), 200
+
         return jsonify({"status": "success"}), 200
     return jsonify({"status": "planning_failed"}), 500
 
