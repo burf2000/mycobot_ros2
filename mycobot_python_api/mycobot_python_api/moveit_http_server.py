@@ -3,11 +3,8 @@ import rclpy
 
 from flask import Flask, request, jsonify
 from geometry_msgs.msg import PoseStamped
-from sensor_msgs.msg import JointState
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from tf_transformations import quaternion_from_euler, euler_from_quaternion
 from moveit.core.robot_state import RobotState
-from moveit.core.kinematic_constraints import construct_joint_constraint
 # moveit python library
 from moveit.planning import (
     MoveItPy,
@@ -19,13 +16,10 @@ moveit: MoveItPy = None
 planning_component = None
 
 
-
-
 @app.route("/gripper/<action>", methods=["POST"])
 def gripper(action):
     if action not in ("open", "close"):
         return jsonify(error="Invalid action"), 400
-
 
 
     # # Create RobotState and set gripper joint(s) value
@@ -36,7 +30,6 @@ def gripper(action):
         planning_component_gripper.set_goal_state(configuration_name="open")
     else:
         planning_component_gripper.set_goal_state(configuration_name="closed")
-
 
 
     plan_result = planning_component_gripper.plan()
@@ -84,23 +77,34 @@ def move_to_xyz():
     if plan_result and robot_trajectory:
         moveit.execute(robot_trajectory, controllers=[])
 
-        # last_idx = len(robot_trajectory) - 1
-        # final_state = robot_trajectory[last_idx]
-        # tf = final_state.get_global_link_transform("gripper_base")
-        # pos = tf.translation
-        # rot = tf.rotation
-        # from tf_transformations import euler_from_quaternion
-        # roll, pitch, yaw = euler_from_quaternion([rot.x, rot.y, rot.z, rot.w])
+        ## 1. Create a RobotState, copy the current state
+        st = RobotState(moveit.get_robot_model())
 
-        # return jsonify({
-        #     "status": "success",
-        #     "end_effector": {
-        #         "position": {"x": pos.x, "y": pos.y, "z": pos.z},
-        #         "orientation_euler": {"roll": roll, "pitch": pitch, "yaw": yaw},
-        #         "orientation_quat": {"x": rot.x, "y": rot.y, "z": rot.z, "w": rot.w}
-        #     }
-        # }), 200
+        # 2. Update the transforms (forward-kinematics)
+        st.update()  # ensure transforms are up to date
+        # 3. Get the global link transform of your end-effector
+        import numpy as np
+        tf_mat = st.get_global_link_transform("gripper_base")  # returns an Eigen transform matrix :contentReference[oaicite:1]{index=1}
 
+        # 4. Extract position & quaternion (assuming tf_mat is np 4×4)
+        pos = tf_mat[:3, 3]
+        rot_mat = tf_mat[:3, :3]
+
+        # 5. Convert to quaternion and Euler
+        from tf_transformations import quaternion_from_matrix, euler_from_quaternion
+        qx, qy, qz, qw = quaternion_from_matrix(tf_mat)
+        roll, pitch, yaw = euler_from_quaternion([qx, qy, qz, qw])
+
+        # 6. Return as JSON
+        return jsonify({
+            "status": "success",
+            "end_effector": {
+                "position": {"x": float(pos[0]), "y": float(pos[1]), "z": float(pos[2])},
+                "orientation_quat": {"x": qx, "y": qy, "z": qz, "w": qw},
+                "orientation_euler": {"roll": roll, "pitch": pitch, "yaw": yaw}
+            }
+        }), 200
+    
         return jsonify({"status": "success"}), 200
     return jsonify({"status": "planning_failed"}), 500
 
