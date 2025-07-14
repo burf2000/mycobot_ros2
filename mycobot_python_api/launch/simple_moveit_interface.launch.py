@@ -15,8 +15,8 @@ def generate_launch_description():
             "mycobot_280.urdf.xacro"
             )
         )
-        .robot_description_semantic(file_path="config/mycobot_280/mycobot_280.srdf")
-        .trajectory_execution(file_path="config/mycobot_280/moveit_controllers.yaml")
+        .robot_description_semantic(file_path="config/mycobot_280.srdf")
+        .trajectory_execution(file_path="config/moveit_controllers.yaml")
         .moveit_cpp(
             file_path=get_package_share_directory("mycobot_moveit_config")
             + "/config/planning_python_api.yaml"
