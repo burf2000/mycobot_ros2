@@ -2,7 +2,17 @@
 ![OS](https://img.shields.io/ubuntu/v/ubuntu-wallpapers/noble)
 ![ROS_2](https://img.shields.io/ros/v/jazzy/rclcpp)
 
+
 ## Overview
+This is a fork of the great work by https://github.com/automaticaddison/mycobot_ros2
+
+The idea of this repo is to extend what has been done by AutomaticAddison by learning MoveIt2 and the API's (Python) and to get it to work with real hardware.
+ - First, I have added a MoveIt2 Python API, which has been a real challenge.  Latest I discovered that the C one works a lot better
+ - Added a PyMoveIt API which seems to be more inline with the C API
+ - Last is to get it to work with the real arm which I have (todo)
+
+
+## Overview (from fork)
 This repository contains ROS 2 packages for simulating and controlling the myCobot robotic arm using ROS 2 Control and MoveIt 2. It provides support for Gazebo simulation and visualization in RViz. Gazebo simulation also includes simulated 3D point cloud data from the depth camera (RGBD) sensor plugin for vision.
 
 ![Gazebo Pick and Place Task Simulation](https://automaticaddison.com/wp-content/uploads/2024/12/pick-place-gazebo-800-fast.gif)
