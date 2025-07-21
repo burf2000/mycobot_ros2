@@ -23,6 +23,7 @@ setup(
     entry_points={
         'console_scripts': [
             'api = mycobot_pymoveit_api.api:main',
+            'sync_plan = mycobot_pymoveit_api.sync_plan:main',
         ],
     },
 )
