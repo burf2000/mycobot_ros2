@@ -1,0 +1,26 @@
+planning_pipelines:
+  pipeline_names: ["ompl"]
+
+plan_request_params:
+  planning_pipeline: ompl
+  planning_time: 5.0
+  planning_attempts: 3
+  max_velocity_scaling_factor: 0.5
+  max_acceleration_scaling_factor: 0.5
+
+request_adapters:
+  - default_planning_request_adapters/ResolveConstraintFrames
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  - default_planning_request_adapters/CheckStartStateCollision
+
+planner_configs:
+  # Global planner configurations
+  RRTConnectkConfigDefault:
+    type: geometric::RRTConnect
+    range: 0.0
+
+arm:
+  default_planner_config: RRTConnectkConfigDefault
+  planner_configs:
+    - RRTConnectkConfigDefault

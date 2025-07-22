@@ -1,0 +1,24 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/burf2000/ros2_ws/install/mycobot_interfaces/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/warehouse_ros_mongo/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/moveit_task_constructor_core/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/ros2_arm_api/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/mycobot_interfaces/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/moveit_task_constructor_msgs/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/joy_tester/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/ball_tracker/lib/python3.12/site-packages",
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/burf2000/ros2_ws/install/mycobot_interfaces/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/warehouse_ros_mongo/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/moveit_task_constructor_core/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/ros2_arm_api/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/mycobot_interfaces/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/moveit_task_constructor_msgs/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/joy_tester/lib/python3.12/site-packages",
+        "/home/burf2000/dev_ws/install/ball_tracker/lib/python3.12/site-packages",
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ]
+}

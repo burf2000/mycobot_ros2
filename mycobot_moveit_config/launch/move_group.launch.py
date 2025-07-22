@@ -80,7 +80,7 @@ def generate_launch_description():
         pkg_share_moveit_config = pkg_share_moveit_config_temp.find(package_name_moveit_config)
 
         # Construct file paths using robot name string
-        config_path = os.path.join(pkg_share_moveit_config, 'config', robot_name_str)
+        config_path = os.path.join(pkg_share_moveit_config, 'config')
 
         # Define all config file paths
         initial_positions_file_path = os.path.join(config_path, 'initial_positions.yaml')
