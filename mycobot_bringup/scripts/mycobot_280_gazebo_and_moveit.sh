@@ -35,9 +35,9 @@ sleep 5
 
 ros2 launch mycobot_pymoveit_api api.launch.py &
 
-sleep 5
+# sleep 5
 
-ros2 run mycobot_pymoveit_api sync_plan &
+# ros2 run mycobot_pymoveit_api sync_plan &
 
 # Keep the script running until Ctrl+C
 wait

@@ -7,9 +7,22 @@
 This is a fork of the great work by https://github.com/automaticaddison/mycobot_ros2
 
 The idea of this repo is to extend what has been done by AutomaticAddison by learning MoveIt2 and the API's (Python) and to get it to work with real hardware.
- - First, I have added a MoveIt2 Python API, which has been a real challenge.  Latest I discovered that the C one works a lot better
- - Added a PyMoveIt API which seems to be more inline with the C API
- - Last is to get it to work with the real arm which I have (todo)
+ - First, I have added a MoveIt2 Python API, which has been a real challenge.  Latee I discovered that the C one works a lot better
+ - Added a PyMoveIt API which seems to be more inline with the C API and a lot easier to get going
+ - Last was to get it working with a real arm
+
+
+## Steps to run
+```bash
+# Launches everything (RVIZ, MoveIt, Gazebo, API, USB connection to real arm)
+$ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_gazebo_and_moveit.sh
+
+# Arm movement
+$ curl -X POST http://localhost:8080/move   -H "Content-Type: application/json"   -d '{"posX":0.1133,"posY":0.0133,"posZ":0.3,"rotX":1,"rotY":0,"rotZ":0,"rotW":1}'
+
+# Gripper Movement
+$ curl -X POST http://localhost:8080/gripper/close   -H "Content-Type: application/json" 
+```
 
 
 ## Overview (from fork)
