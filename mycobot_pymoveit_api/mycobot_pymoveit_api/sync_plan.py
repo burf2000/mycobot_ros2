@@ -78,8 +78,21 @@ class Slider_Subscriber(Node):
             #-30 closed, 9 max open
             # Example mapping: fully open = 0, fully closed = 100 (adjust as needed)
             # Map gripper_angle from [-30, 10] to [0, 100]
-            gripper_angle_clamped = max(-30, min(10, gripper_angle))  # Clamp to valid range
-            gripper_value = int((gripper_angle_clamped + 30) * (100 / 40))  # Normalize and scale    
+
+
+            # if gripper_angle < -30:
+            #     gripper_angle = -30
+
+            # gripper_angle_clamped = max(-30, min(10, gripper_angle))  # Clamp to valid range
+            # gripper_value = int((gripper_angle_clamped + 30) * (100 / 40))  # Normalize and scale    
+
+            # print(f'Gripper: {gripper_value} {gripper_angle}')
+            
+            gripper_value = 0
+
+            if gripper_angle != 0.0:
+                gripper_value = 90
+
             self.mc.set_gripper_value(gripper_value, 50)  # speed=50, tune as needed
 
         

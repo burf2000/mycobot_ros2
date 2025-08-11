@@ -86,8 +86,8 @@ def main():
     gripper_interface = GripperInterface(
         node=node,
         gripper_joint_names=['gripper_controller'],
-        open_gripper_joint_positions=[0.15],
-        closed_gripper_joint_positions=[-0.7],
+        open_gripper_joint_positions=[0.1],
+        closed_gripper_joint_positions=[0.0],
         gripper_group_name='gripper',
         callback_group=cbg,
         gripper_command_action_name="gripper_action_controller/gripper_cmd",
