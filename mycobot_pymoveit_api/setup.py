@@ -24,6 +24,7 @@ setup(
         'console_scripts': [
             'api = mycobot_pymoveit_api.api:main',
             'sync_plan = mycobot_pymoveit_api.sync_plan:main',
+            'sync_plan_hardware = mycobot_pymoveit_api.sync_plan_hardware:main',
         ],
     },
 )
