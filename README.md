@@ -20,6 +20,13 @@ $ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_gazebo_and
 # Arm movement
 $ curl -X POST http://localhost:8080/move   -H "Content-Type: application/json"   -d '{"posX":0.1133,"posY":0.0133,"posZ":0.3,"rotX":1,"rotY":0,"rotZ":0,"rotW":1}'
 
+# arm parallel to ground
+$ curl -X POST http://localhost:8080/move   -H "Content-Type: application/json"   -d '{"posX":0.029,"posY":0.186,"posZ":0.1285,"rotX":0.004,"rotY":0.042,"rotZ":0.000,"rotW":1}'
+
+# pickup
+$ curl -X POST http://localhost:8080/move   -H "Content-Type: application/json"   -d '{"posX":-0.002,"posY":-0.24,"posZ":0.06,"rotX":0.009,"rotY":-0.699,"rotZ":0.713,"rotW":0.027}'
+
+
 # Gripper Movement
 $ curl -X POST http://localhost:8080/gripper/close   -H "Content-Type: application/json" 
 ```
