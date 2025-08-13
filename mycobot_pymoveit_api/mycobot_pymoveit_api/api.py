@@ -2,7 +2,7 @@
 import rclpy
 from threading import Thread
 from flask import Flask, request, jsonify
-
+import time
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 
@@ -23,10 +23,12 @@ def gripper(action):
 
     if "open" == action:
         gripper_interface.open()
-        gripper_interface.wait_until_executed()
+        time.sleep(2)
+        #gripper_interface.wait_until_executed()
     elif "close" == action:
         gripper_interface.close()
-        gripper_interface.wait_until_executed()
+        time.sleep(2)
+        #gripper_interface.wait_until_executed()
 
     return jsonify(status="success"), 200
 

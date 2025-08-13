@@ -86,14 +86,18 @@ class Slider_Subscriber(Node):
             # gripper_angle_clamped = max(-30, min(10, gripper_angle))  # Clamp to valid range
             # gripper_value = int((gripper_angle_clamped + 30) * (100 / 40))  # Normalize and scale    
 
-            # print(f'Gripper: {gripper_value} {gripper_angle}')
             
+            # API gripper open -0.0 comes in, set value to 90
+            # API gripper closed -34 comes in, set value to 0
+
             gripper_value = 0
 
-            if gripper_angle != 0.0:
+            if gripper_angle == 0.0:
                 gripper_value = 90
 
-            self.mc.set_gripper_value(gripper_value, 50)  # speed=50, tune as needed
+            # print(f'Gripper: {gripper_value} {gripper_angle}')
+
+            self.mc.set_gripper_value(gripper_value, 50, 1)  # speed=50, tune as needed
 
         
 

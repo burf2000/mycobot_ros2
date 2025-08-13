@@ -17,15 +17,32 @@ The idea of this repo is to extend what has been done by AutomaticAddison by lea
 # Launches everything (RVIZ, MoveIt, Gazebo, API, USB connection to real arm)
 $ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_gazebo_and_moveit.sh
 
+# run visual script
+$ ros2 run mycobot_pymoveit_api display
+
+# Home arm
+$ curl -X POST http://localhost:8080/move   -H "Content-Type: application/json"   -d '{"posX":0.06,"posY":0.079,"posZ":0.41,"rotX":0.03,"rotY":-0.382,"rotZ":0.001,"rotW":1}'
+
 # Arm movement
 $ curl -X POST http://localhost:8080/move   -H "Content-Type: application/json"   -d '{"posX":0.1133,"posY":0.0133,"posZ":0.3,"rotX":1,"rotY":0,"rotZ":0,"rotW":1}'
 
 # arm parallel to ground
 $ curl -X POST http://localhost:8080/move   -H "Content-Type: application/json"   -d '{"posX":0.029,"posY":0.186,"posZ":0.1285,"rotX":0.004,"rotY":0.042,"rotZ":0.000,"rotW":1}'
 
-# pickup
-$ curl -X POST http://localhost:8080/move   -H "Content-Type: application/json"   -d '{"posX":-0.002,"posY":-0.24,"posZ":0.06,"rotX":0.009,"rotY":-0.699,"rotZ":0.713,"rotW":0.027}'
+# pickup Y (forward)
+$ curl -X POST http://localhost:8080/move   -H "Content-Type: application/json"   -d '{"posX":-0.002,"posY":0.24,"posZ":0.08,"rotX":0.020,"rotY":-0.659,"rotZ":0.613,"rotW":0.000}'
 
+#pick up X (Right)
+curl -X POST http://localhost:8080/move -H "Content-Type: application/json" -d '{
+  "posX": 0.24, "posY": 0.00, "posZ": 0.08,
+  "rotX": -0.491, "rotY": -0.503, "rotZ": 0.520, "rotW": 0.483
+}'
+
+#pick up - X (Left)
+curl -X POST http://localhost:8080/move -H "Content-Type: application/json" -d '{
+  "posX": -0.24, "posY": 0.00, "posZ": 0.08,
+  "rotX": -0.491, "rotY": -0.503, "rotZ": 0.520, "rotW": 0.483
+}'
 
 # Gripper Movement
 $ curl -X POST http://localhost:8080/gripper/close   -H "Content-Type: application/json" 
