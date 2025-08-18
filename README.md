@@ -9,8 +9,10 @@ This is a fork of the great work by https://github.com/automaticaddison/mycobot_
 The idea of this repo is to extend what has been done by AutomaticAddison by learning MoveIt2 and the API's (Python) and to get it to work with real hardware.
  - First, I have added a MoveIt2 Python API, which has been a real challenge.  Latee I discovered that the C one works a lot better
  - Added a PyMoveIt API which seems to be more inline with the C API and a lot easier to get going
- - Last was to get it working with a real arm
-
+ -
+rqt
+rqt_graph
+ros2 node info /node
 
 ## Steps to run
 ```bash
