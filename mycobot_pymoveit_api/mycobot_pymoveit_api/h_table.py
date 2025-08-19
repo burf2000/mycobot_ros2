@@ -192,7 +192,7 @@ def compute_and_save_h(img_path: Path, save_path: Path, points_override=None):
 
 if __name__ == "__main__":
     home = Path.home()
-    default_img = home / "ros2_ws/src/mycobot_ros2/mycobot_pymoveit_api/mycobot_pymoveit_api/calib2.jpg"
+    default_img = home / "mycobot_ws/src/mycobot_ros2/mycobot_pymoveit_api/mycobot_pymoveit_api/calib2.jpg"
 
     ap = argparse.ArgumentParser(description="Create H_table.npy with guided clicks + projected A4 diagnostics.")
     ap.add_argument("image", nargs="?", default=str(default_img), help="Calibration image path")

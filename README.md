@@ -17,7 +17,7 @@ ros2 node info /node
 ## Steps to run
 ```bash
 # Launches everything (RVIZ, MoveIt, Gazebo, API, USB connection to real arm)
-$ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_gazebo_and_moveit.sh
+$ bash ~/mycobot_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_gazebo_and_moveit.sh
 
 # run visual script
 $ ros2 run mycobot_pymoveit_api display

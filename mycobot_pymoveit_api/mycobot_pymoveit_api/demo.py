@@ -16,7 +16,7 @@ AZURE_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
 CAM_INDEX = 0
 
 H_FILE = os.path.expanduser(
-    "~/ros2_ws/src/mycobot_ros2/mycobot_pymoveit_api/mycobot_pymoveit_api/H_table.npy"
+    "~/mycobot_ws/src/mycobot_ros2/mycobot_pymoveit_api/mycobot_pymoveit_api/H_table.npy"
 )
 
 Z_APPROACH = 0.10
