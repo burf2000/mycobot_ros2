@@ -6,6 +6,13 @@ import cv2
 import numpy as np
 import requests
 
+# Azure OpenAI env
+AZURE_ENDPOINT   = os.environ.get("AZURE_OPENAI_ENDPOINT", "https://ffhg-ai-service.cognitiveservices.azure.com").rstrip("/")
+AZURE_API_KEY    = os.environ.get("AZURE_OPENAI_API_KEY", "A3LrQXp6s3Jrg7oevQkNy4i4wyC25imawvsqg1Hp3j69UODsNYZ2JQQJ99BAACmepeSXJ3w3AAAAACOGuuil")
+AZURE_API_VER    = os.environ.get("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+AZURE_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+
+
 # ----------------- CONFIG -----------------
 
 CAM_INDEX = 0
@@ -37,17 +44,11 @@ HOME_POSE = {
     "rotX": 0.03, "rotY": -0.382, "rotZ": 0.001, "rotW": 1.0
 }
 
-# HIDE_POSE = {
-#     "posX": 0.1402, "posY": 0.0032, "posZ": 0.4101,
-#     "rotX": -0.281, "rotY": -0.298, "rotZ": -0.630, "rotW": 0.658
-# }
+HIDE_POSE = {
+    "posX": 0.06, "posY": 0.005, "posZ": 0.444,
+    "rotX": 0.352, "rotY": -0.354, "rotZ": -0.143, "rotW": 0.854
+}
 
-
-# Azure OpenAI env
-AZURE_ENDPOINT   = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
-AZURE_API_KEY    = os.environ.get("AZURE_OPENAI_API_KEY", "")
-AZURE_API_VER    = os.environ.get("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
-AZURE_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
 
 # Image-right ↔ robot X polarity
 IMAGE_RIGHT_IS_POSITIVE_X = -1   # +1:right=+X,  -1:right=-X (your setup)
@@ -121,22 +122,6 @@ def yaw_about_z(q: Tuple[float,float,float,float], yaw_rad: float):
     w = w2*w1 - x2*x1 - y2*y1 - z2*z1
     return (x, y, z, w)
 
-# def axis_adjust(x_m: float, y_m: float, u_px: float, origin_u_px: float) -> Tuple[float,float]:
-#     """Get X sign from which side of origin_u_px the target lies, then apply scale & bias.
-#        Y is never mirrored unless you set INVERT_Y; only Y_SCALE/Y_BIAS are applied."""
-#     X = -x_m if INVERT_X else x_m
-#     Y = -y_m if INVERT_Y else y_m
-
-#     side = 1.0 if (u_px - origin_u_px) >= 0.0 else -1.0
-#     sign = IMAGE_RIGHT_IS_POSITIVE_X * side
-#     X = abs(X) * sign
-
-#     # Per-axis trims
-#     X = (X * X_SCALE) + X_BIAS
-#     Y = (Y * Y_SCALE) + Y_BIAS
-#     return X, Y
-
-
 def axis_adjust(x_m: float, y_m: float) -> Tuple[float,float]:
     """
     Trust Azure's posX,posY as meters in robot frame.
@@ -180,7 +165,7 @@ def gripper_close(timeout=10.0):
 def go_home():
     try: gripper_open()
     except Exception as e: print("[WARN] gripper open:", e)
-    try: call_move_pose(HOME_POSE)
+    try: call_move_pose(HIDE_POSE)
     except Exception as e: print("[WARN] home move:", e)
 
 def call_azure_for_robot_xy(img_bgr) -> Dict[str, float]:
@@ -191,11 +176,11 @@ def call_azure_for_robot_xy(img_bgr) -> Dict[str, float]:
         " • Origin (0,0) at BACK-CENTER of the robot base (near TOP-CENTER of image).\n"
         " • Y+ is forward toward the camera (downward in the image).\n"
         " • X+ is LEFT OF THE IMAGE (Important).\n"
-        " • X- is RIGHT OF THE IMAGE!(Important).\n"
-        "Target: a RED LEGO BRICK ~16mm x 16mm on the table, within 0.28 m radius. "
-        "Ignore the robot; find the USB. "
+        " • X- is RIGHT OF THE IMAGE (Important).\n"
+        "Target: a RED 2×4 LEGO brick (~16 mm x 32 mm) lying on the table, within 0.28 m radius. "
+        "Ignore the robot and any tools. Detect the brick ONLY. "
         "Return STRICT JSON: {\"posX\":<float>,\"posY\":<float>,\"yaw_deg\":<float>,\"u\":<float>,\"v\":<float>} "
-        "with posX/posY in METERS, yaw_deg clockwise relative to +X, and (u,v) pixel center."
+        "with posX/posY in METERS in the ROBOT FRAME, yaw_deg measured clockwise from +X, and (u,v) the pixel center."
     )
     user_text = "ONLY JSON. Example: {\"posX\":0.105,\"posY\":0.240,\"yaw_deg\":-90.0,\"u\":512.0,\"v\":360.0}"
     url = f"{AZURE_ENDPOINT}/openai/deployments/{AZURE_DEPLOYMENT}/chat/completions?api-version={AZURE_API_VER}"
@@ -302,10 +287,6 @@ def main():
                 
                 X, Y = axis_adjust(x_raw, y_raw)
 
-                # Average a few frames to reduce flicker
-                # avg_buf.append((X, Y, yaw_deg, u, v))
-                # X, Y, yaw_deg, u, v = map(lambda a: sum(a)/len(a), zip(*avg_buf))
-
                 print(f"[Azure] raw=({x_raw:.3f},{y_raw:.3f}) -> adj_avg=({X:.3f},{Y:.3f}), yaw={yaw_deg:.1f}°")
 
                 overlay = img.copy()
@@ -317,6 +298,8 @@ def main():
                 if r < BASE_BUFFER_RADIUS: print(f"[SKIP] Inside 5 cm keep-out (r={r:.3f})."); continue
                 if not ALLOW_NEGATIVE_Y and Y < 0.0: print(f"[SKIP] Y={Y:.3f} < 0."); continue
                 if r > MAX_RADIUS: print(f"[SKIP] Outside radius {MAX_RADIUS} (r={r:.3f})."); continue
+
+                time.sleep(1.0)
 
                 if key == ord('c'):
                     call_move_pose(HOME_POSE)
@@ -341,8 +324,8 @@ def main():
                     time.sleep(2.0)
                     print("[HOME] …"); 
                     call_move_pose(HOME_POSE)
-                    # time.sleep(2.0)
-                    # call_move_pose(HIDE_POSE)
+                    time.sleep(3.0)
+                    call_move_pose(HIDE_POSE)
                     print("[DONE]")
 
             except Exception as e:
