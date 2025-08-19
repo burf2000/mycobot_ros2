@@ -37,6 +37,12 @@ HOME_POSE = {
     "rotX": 0.03, "rotY": -0.382, "rotZ": 0.001, "rotW": 1.0
 }
 
+# HIDE_POSE = {
+#     "posX": 0.1402, "posY": 0.0032, "posZ": 0.4101,
+#     "rotX": -0.281, "rotY": -0.298, "rotZ": -0.630, "rotW": 0.658
+# }
+
+
 # Azure OpenAI env
 AZURE_ENDPOINT   = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
 AZURE_API_KEY    = os.environ.get("AZURE_OPENAI_API_KEY", "")
@@ -186,7 +192,7 @@ def call_azure_for_robot_xy(img_bgr) -> Dict[str, float]:
         " • Y+ is forward toward the camera (downward in the image).\n"
         " • X+ is LEFT OF THE IMAGE (Important).\n"
         " • X- is RIGHT OF THE IMAGE!(Important).\n"
-        "Target: a USB stick ~50mm x 18mm on the table, within 0.28 m radius. "
+        "Target: a RED LEGO BRICK ~16mm x 16mm on the table, within 0.28 m radius. "
         "Ignore the robot; find the USB. "
         "Return STRICT JSON: {\"posX\":<float>,\"posY\":<float>,\"yaw_deg\":<float>,\"u\":<float>,\"v\":<float>} "
         "with posX/posY in METERS, yaw_deg clockwise relative to +X, and (u,v) pixel center."
@@ -297,8 +303,8 @@ def main():
                 X, Y = axis_adjust(x_raw, y_raw)
 
                 # Average a few frames to reduce flicker
-                avg_buf.append((X, Y, yaw_deg, u, v))
-                X, Y, yaw_deg, u, v = map(lambda a: sum(a)/len(a), zip(*avg_buf))
+                # avg_buf.append((X, Y, yaw_deg, u, v))
+                # X, Y, yaw_deg, u, v = map(lambda a: sum(a)/len(a), zip(*avg_buf))
 
                 print(f"[Azure] raw=({x_raw:.3f},{y_raw:.3f}) -> adj_avg=({X:.3f},{Y:.3f}), yaw={yaw_deg:.1f}°")
 
@@ -313,6 +319,8 @@ def main():
                 if r > MAX_RADIUS: print(f"[SKIP] Outside radius {MAX_RADIUS} (r={r:.3f})."); continue
 
                 if key == ord('c'):
+                    call_move_pose(HOME_POSE)
+                    time.sleep(2.0)
                     gripper_open()
                     yaw_total_deg = (YAW_SIGN * yaw_deg) + GRIPPER_YAW_OFFSET_DEG
                     qx,qy,qz,qw = yaw_about_z(SAFE_Q, math.radians(yaw_total_deg))
@@ -331,7 +339,10 @@ def main():
                     print("[MOVE] lift"); 
                     call_move(X, Y, Z_APPROACH, (qx,qy,qz,qw))
                     time.sleep(2.0)
-                    print("[HOME] …"); call_move_pose(HOME_POSE)
+                    print("[HOME] …"); 
+                    call_move_pose(HOME_POSE)
+                    # time.sleep(2.0)
+                    # call_move_pose(HIDE_POSE)
                     print("[DONE]")
 
             except Exception as e:

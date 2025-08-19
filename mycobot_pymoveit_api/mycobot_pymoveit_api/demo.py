@@ -7,6 +7,12 @@ import requests
 
 # ----------------- CONFIG -----------------
 
+# Azure OpenAI (Vision) settings
+AZURE_ENDPOINT   = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+AZURE_API_KEY    = os.environ.get("AZURE_OPENAI_API_KEY", "")
+AZURE_API_VER    = os.environ.get("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+AZURE_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+
 CAM_INDEX = 0
 
 H_FILE = os.path.expanduser(
