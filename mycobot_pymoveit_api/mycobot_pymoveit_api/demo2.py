@@ -7,8 +7,8 @@ import numpy as np
 import requests
 
 # ----------------- AZURE OPENAI ENV -----------------
-AZURE_ENDPOINT   = os.environ.get("AZURE_OPENAI_ENDPOINT", "https://ffhg-ai-service.cognitiveservices.azure.com").rstrip("/")
-AZURE_API_KEY    = os.environ.get("AZURE_OPENAI_API_KEY", "A3LrQXp6s3Jrg7oevQkNy4i4wyC25imawvsqg1Hp3j69UODsNYZ2JQQJ99BAACmepeSXJ3w3AAAAACOGuuil")
+AZURE_ENDPOINT   = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+AZURE_API_KEY    = os.environ.get("AZURE_OPENAI_API_KEY", "")
 AZURE_API_VER    = os.environ.get("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
 AZURE_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
 
@@ -100,6 +100,7 @@ def load_cfg():
         Y_BIAS = float(cfg.get("y_bias", Y_BIAS))
         X_SCALE = float(cfg.get("x_scale", X_SCALE))
         Y_SCALE = float(cfg.get("y_scale", Y_SCALE))
+
         print(f"[CFG] Loaded {CFG_FILE}: origin_u={ORIGIN_U_PX}, right→X={IMAGE_RIGHT_IS_POSITIVE_X}, "
               f"Xbias={X_BIAS:.3f}, Ybias={Y_BIAS:.3f}, Xscale={X_SCALE:.3f}, Yscale={Y_SCALE:.3f}")
     except Exception:
@@ -458,8 +459,15 @@ def main():
     print("  g = toggle force-horizontal-yaw  |  9/0 = yaw -/+ 5°")
     print("  q = quit")
 
-    cv2.namedWindow("webcam", cv2.WINDOW_NORMAL)
+
+    cv2.namedWindow("webcam", cv2.WINDOW_NORMAL | cv2.WINDOW_GUI_EXPANDED)
     cap = cv2.VideoCapture(CAM_INDEX)
+    ok, tmp = cap.read()
+    if ok:
+        h, w = tmp.shape[:2]
+        scale = 1.8  # <- tweak (e.g., 1.5, 2.0)
+        cv2.resizeWindow("webcam", int(w * scale), int(h * scale))
+
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open camera index {CAM_INDEX}")
 
@@ -473,7 +481,7 @@ def main():
                 ORIGIN_U_PX = w // 2
 
             view = frame.copy()
-            cv2.putText(view, "c=pick  v=preview  r=home  [ ]=nudge  p=flipX  1-8=trims  g=fixYaw  9/0=yaw  s=save  q=quit",
+            cv2.putText(view, "c=pick  v=preview  r=home s=save  q=quit",
                         (12,28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0,255,0), 2)
             cv2.line(view, (int(ORIGIN_U_PX), 0), (int(ORIGIN_U_PX), h), (255,255,0), 1)
             cv2.imshow("webcam", view)
