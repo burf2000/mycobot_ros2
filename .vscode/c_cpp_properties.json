@@ -6,14 +6,14 @@
         "limitSymbolsToIncludedHeaders": false
       },
       "includePath": [
-        "/home/ubuntu/ros2_ws/install/ros2_fundamentals_examples/include/**",
+        "/home/ubuntu/mycobot_ws/install/ros2_fundamentals_examples/include/**",
         "/opt/ros/jazzy/include/**",
-        "/home/ubuntu/ros2_ws/src/mycobot_ros2/mycobot_description/include/**",
-        "/home/ubuntu/ros2_ws/src/mycobot_ros2/mycobot_ros2/include/**",
-        "/home/ubuntu/ros2_ws/src/mycobot_ros2/mycobot_mtc_pick_place_demo/include/**",
-        "/home/ubuntu/ros2_ws/src/ros2_fundamentals_examples/include/**",
-        "/home/ubuntu/ros2_ws/src/yahboom_rosmaster/yahboom_rosmaster/include/**",
-        "/home/ubuntu/ros2_ws/src/yahboom_rosmaster/yahboom_rosmaster_description/include/**",
+        "/home/ubuntu/mycobot_ws/src/mycobot_ros2/mycobot_description/include/**",
+        "/home/ubuntu/mycobot_ws/src/mycobot_ros2/mycobot_ros2/include/**",
+        "/home/ubuntu/mycobot_ws/src/mycobot_ros2/mycobot_mtc_pick_place_demo/include/**",
+        "/home/ubuntu/mycobot_ws/src/ros2_fundamentals_examples/include/**",
+        "/home/ubuntu/mycobot_ws/src/yahboom_rosmaster/yahboom_rosmaster/include/**",
+        "/home/ubuntu/mycobot_ws/src/yahboom_rosmaster/yahboom_rosmaster_description/include/**",
         "/usr/include/**"
       ],
       "name": "ROS",

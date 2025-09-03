@@ -7,14 +7,14 @@ import numpy as np
 import requests
 
 # ----------------- AZURE OPENAI ENV -----------------
-AZURE_ENDPOINT   = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
-AZURE_API_KEY    = os.environ.get("AZURE_OPENAI_API_KEY", "")
+AZURE_ENDPOINT   = os.environ.get("AZURE_OPENAI_ENDPOINT", "https://ffhg-ai-service.cognitiveservices.azure.com").rstrip("/")
+AZURE_API_KEY    = os.environ.get("AZURE_OPENAI_API_KEY", "A3LrQXp6s3Jrg7oevQkNy4i4wyC25imawvsqg1Hp3j69UODsNYZ2JQQJ99BAACmepeSXJ3w3AAAAACOGuuil")
 AZURE_API_VER    = os.environ.get("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
 AZURE_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
 
 # ----------------- CONFIG -----------------
 
-CAM_INDEX = 0
+CAM_INDEX = 1
 
 # Heights (m)
 Z_APPROACH = 0.12
@@ -61,13 +61,17 @@ YAW_SIGN = +1
 # Adjustable X-origin column (pixels) & trims
 CFG_FILE = "vision_origin.json"
 ORIGIN_U_PX = None
-NUDGE_STEP = 5  # px
+NUDGE_STEP = 5  # px  (visual guide only)
 
 # Per-axis fine trims (meters) AFTER metric ROI mapping
 X_BIAS = 0.000
 Y_BIAS = 0.000
 X_SCALE = 1.000
 Y_SCALE = 1.000
+
+# ---- NEW: Real X-origin shift that affects computed X (meters) ----
+X_ORIGIN_SHIFT_M = 0.0            # changed with [ and ]
+X_ORIGIN_STEP_M  = 0.002          # 2 mm per tap
 
 # Averaging (to smooth 1-frame noise)
 AVG_WINDOW = 3
@@ -81,7 +85,7 @@ M_PER_PX  = MM_PER_PX / 1000.0
 ROI_W_PX  = int(round(ROI_W_MM / MM_PER_PX))  # 1120
 ROI_H_PX  = int(round(ROI_H_MM / MM_PER_PX))  # 560
 
-# --- NEW: inner margins (mm) to remove tape thickness (use your real values) ---
+# Inner margins (mm) to remove tape thickness
 MARGIN_LEFT_MM   = 10.0
 MARGIN_RIGHT_MM  = 10.0
 MARGIN_TOP_MM    = 10.0
@@ -90,7 +94,7 @@ MARGIN_BOTTOM_MM = 10.0
 # ----------------- UTILS -----------------
 
 def load_cfg():
-    global ORIGIN_U_PX, IMAGE_RIGHT_IS_POSITIVE_X, X_BIAS, Y_BIAS, X_SCALE, Y_SCALE
+    global ORIGIN_U_PX, IMAGE_RIGHT_IS_POSITIVE_X, X_BIAS, Y_BIAS, X_SCALE, Y_SCALE, X_ORIGIN_SHIFT_M
     try:
         with open(CFG_FILE, "r") as f:
             cfg = json.load(f)
@@ -100,20 +104,22 @@ def load_cfg():
         Y_BIAS = float(cfg.get("y_bias", Y_BIAS))
         X_SCALE = float(cfg.get("x_scale", X_SCALE))
         Y_SCALE = float(cfg.get("y_scale", Y_SCALE))
-
+        X_ORIGIN_SHIFT_M = float(cfg.get("x_origin_shift_m", X_ORIGIN_SHIFT_M))
         print(f"[CFG] Loaded {CFG_FILE}: origin_u={ORIGIN_U_PX}, right→X={IMAGE_RIGHT_IS_POSITIVE_X}, "
-              f"Xbias={X_BIAS:.3f}, Ybias={Y_BIAS:.3f}, Xscale={X_SCALE:.3f}, Yscale={Y_SCALE:.3f}")
+              f"Xbias={X_BIAS:.3f}, Ybias={Y_BIAS:.3f}, Xscale={X_SCALE:.3f}, Yscale={Y_SCALE:.3f}, "
+              f"XoriginShift={X_ORIGIN_SHIFT_M:+.3f} m")
     except Exception:
         print("[CFG] No saved config; using defaults.")
 
 def save_cfg():
     cfg = {
-        "origin_u_px": int(ORIGIN_U_PX),
+        "origin_u_px": int(ORIGIN_U_PX if ORIGIN_U_PX is not None else 0),
         "image_right_pos_x": int(IMAGE_RIGHT_IS_POSITIVE_X),
         "x_bias": float(X_BIAS),
         "y_bias": float(Y_BIAS),
         "x_scale": float(X_SCALE),
         "y_scale": float(Y_SCALE),
+        "x_origin_shift_m": float(X_ORIGIN_SHIFT_M),
     }
     try:
         with open(CFG_FILE, "w") as f:
@@ -195,7 +201,7 @@ def call_azure_for_robot_xy(img_bgr) -> Dict[str, float]:
         " • +X: robot's LEFT      → LEFT side of the image.\n"
         " • -X: robot's RIGHT     → RIGHT side of the image.\n\n"
         "WORKSPACE: X ∈ [-0.28,+0.28] m, Y ∈ [0.00,+0.28] m.\n"
-        "TASK: Detect ONLY a red 2×4 LEGO brick. OUTPUT STRICT JSON {\"posX\":f,\"posY\":f,\"yaw_deg\":f,\"u\":f,\"v\":f}."
+        "TASK: Detect ONLY a red 2×2 LEGO brick. OUTPUT STRICT JSON {\"posX\":f,\"posY\":f,\"yaw_deg\":f,\"u\":f,\"v\":f}."
     )
     user_text = "Return only the JSON object."
     if not (AZURE_ENDPOINT and AZURE_API_KEY and AZURE_DEPLOYMENT):
@@ -368,7 +374,6 @@ def image_vec_from_world_yaw(yaw_deg, length_px=60):
 
 def azure_yaw_for_roi(roi_bgr, u_roi_px: float, v_roi_px: float, x_m: float, y_m: float) -> float:
     print("Calling Azure")
-
     try:
         img64 = b64_jpeg(roi_bgr)
         hint = {
@@ -422,18 +427,19 @@ def overlay_info(img, u_img_overlay, v_img_overlay, yaw_used_deg, origin_u_px,
     cv2.arrowedLine(img, (origin_u_vis, origin_v), (origin_u_vis + 80, origin_v), (255, 0, 0), 2, cv2.LINE_AA, 0, 0.25)
     cv2.arrowedLine(img, (origin_u_vis, origin_v), (origin_u_vis, origin_v + 80), (0, 255, 0), 2, cv2.LINE_AA, 0, 0.25)
 
-    # Robot X-origin column
-    x0 = int(round(origin_u_px))
-    cv2.line(img, (x0, 0), (x0, h), (255, 255, 0), 1)
-    cv2.putText(img, f"origin_u={x0}px  (Image-left=+X, right=-X)", (x0 + 6, 24),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 0), 2)
+    # Robot X-origin visual column (cosmetic)
+    if origin_u_px is not None:
+        x0 = int(round(origin_u_px))
+        cv2.line(img, (x0, 0), (x0, h), (255, 255, 0), 1)
+        cv2.putText(img, f"origin_u={x0}px  (Image-left=+X, right=-X)", (x0 + 6, 24),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 0), 2)
 
     # Azure (u,v) in ORANGE
     if u_model is not None and v_model is not None:
         um, vm = clamp_uv(u_model, v_model, w, h)
         cv2.circle(img, (um, vm), 8, (0,165,255), -1)  # orange
 
-    # ROI/HSV backprojected point in YELLOW
+    # ROI/HSV backprojected point in YELLOW + yaw arrow
     if u_img_overlay is not None and v_img_overlay is not None:
         uh, vh = clamp_uv(u_img_overlay, v_img_overlay, w, h)
         cv2.circle(img, (uh, vh), 8, (0, 255, 255), -1)  # yellow
@@ -443,22 +449,25 @@ def overlay_info(img, u_img_overlay, v_img_overlay, yaw_used_deg, origin_u_px,
     txt1 = f"(X,Y)=({x_m:+.3f},{y_m:+.3f}) m   yaw_used={yaw_used_deg:+.1f}°"
     cv2.putText(img, txt1, (18, h - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
+    # Show live X-origin shift (meters)
+    cv2.putText(img, f"Xorigin_shift={X_ORIGIN_SHIFT_M:+.3f} m",
+                (18, h - 48), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255,255,0), 2)
+
 # ----------------- MAIN LOOP -----------------
 
 def main():
     global ORIGIN_U_PX, IMAGE_RIGHT_IS_POSITIVE_X, X_BIAS, Y_BIAS, X_SCALE, Y_SCALE
-    global FORCE_HORIZONTAL_YAW, GRIPPER_WORLD_YAW_DEG
+    global FORCE_HORIZONTAL_YAW, GRIPPER_WORLD_YAW_DEG, X_ORIGIN_SHIFT_M
 
     load_cfg()
 
     print("=== Vision pick (metric ROI; inner margins) ===")
     print("Keys:")
     print("  c = capture & pick | v = preview only | r = home")
-    print("  [ / ] = nudge X-origin  | p = flip image-right↔X sign")
+    print("  [ / ] = X-origin shift (±2 mm)  | p = flip image-right↔X sign")
     print("  1/2=X bias  3/4=Y bias  5/6=X scale  7/8=Y scale  s=save")
     print("  g = toggle force-horizontal-yaw  |  9/0 = yaw -/+ 5°")
     print("  q = quit")
-
 
     cv2.namedWindow("webcam", cv2.WINDOW_NORMAL | cv2.WINDOW_GUI_EXPANDED)
     cap = cv2.VideoCapture(CAM_INDEX)
@@ -481,16 +490,23 @@ def main():
                 ORIGIN_U_PX = w // 2
 
             view = frame.copy()
-            cv2.putText(view, "c=pick  v=preview  r=home s=save  q=quit",
+            cv2.putText(view, "c=pick  v=preview  r=home  s=save  q=quit",
                         (12,28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0,255,0), 2)
-            cv2.line(view, (int(ORIGIN_U_PX), 0), (int(ORIGIN_U_PX), h), (255,255,0), 1)
+            if ORIGIN_U_PX is not None:
+                cv2.line(view, (int(ORIGIN_U_PX - (X_ORIGIN_SHIFT_M * 1000)), 0), (int(ORIGIN_U_PX - (X_ORIGIN_SHIFT_M * 1000)), h), (255,255,0), 1)
             cv2.imshow("webcam", view)
 
             key = cv2.waitKey(10) & 0xFF
             if key == ord('q'): break
             if key == ord('r'): print("[RESET] Home…"); go_home(); continue
-            if key == ord('['): ORIGIN_U_PX -= NUDGE_STEP; print(f"[ORIGIN] {ORIGIN_U_PX}"); continue
-            if key == ord(']'): ORIGIN_U_PX += NUDGE_STEP; print(f"[ORIGIN] {ORIGIN_U_PX}"); continue
+            if key == ord('['):
+                X_ORIGIN_SHIFT_M -= X_ORIGIN_STEP_M
+                print(f"[ORIGIN] X_ORIGIN_SHIFT_M = {X_ORIGIN_SHIFT_M:+.3f} m")
+                continue
+            if key == ord(']'):
+                X_ORIGIN_SHIFT_M += X_ORIGIN_STEP_M
+                print(f"[ORIGIN] X_ORIGIN_SHIFT_M = {X_ORIGIN_SHIFT_M:+.3f} m")
+                continue
             if key == ord('p'): IMAGE_RIGHT_IS_POSITIVE_X *= -1; print(f"[POLARITY] {IMAGE_RIGHT_IS_POSITIVE_X}"); continue
             if key == ord('1'): X_BIAS -= 0.005; print(f"[TRIM] X_BIAS={X_BIAS:+.3f}"); continue
             if key == ord('2'): X_BIAS += 0.005; print(f"[TRIM] X_BIAS={X_BIAS:+.3f}"); continue
@@ -555,8 +571,8 @@ def main():
 
                         # Origin for X is INNER center on the top edge
                         inner_center_u = (x0i + x1i) / 2.0
-                        # X positive LEFT  → X = (center - u)*M_PER_PX
-                        X = ((inner_center_u - u_roi) * M_PER_PX) * X_SCALE + X_BIAS
+                        # X positive LEFT  → X = (center - u)*M_PER_PX  (+ live origin shift)
+                        X = ((inner_center_u - u_roi) * M_PER_PX) * X_SCALE + X_BIAS + X_ORIGIN_SHIFT_M
                         # Y=0 at inner top edge (y0i)
                         Y = ((v_roi - y0i) * M_PER_PX) * Y_SCALE + Y_BIAS
 
@@ -592,7 +608,8 @@ def main():
                     raise RuntimeError("No position available.")
 
                 print(f"[ROI] inner-margins(mm) L{MARGIN_LEFT_MM}/R{MARGIN_RIGHT_MM}/T{MARGIN_TOP_MM}/B{MARGIN_BOTTOM_MM}  "
-                      f"u_roi,v_roi={u_roi},{v_roi} -> (X,Y)=({X:.3f},{Y:.3f}) m  yaw_cmd={yaw_cmd_deg:.1f}°")
+                      f"u_roi,v_roi={u_roi},{v_roi} -> (X,Y)=({X:.3f},{Y:.3f}) m  yaw_cmd={yaw_cmd_deg:.1f}°  "
+                      f"XoriginShift={X_ORIGIN_SHIFT_M:+.3f} m")
 
                 # ---- D) Overlay
                 overlay = img.copy()

@@ -1,8 +1,9 @@
 {
-  "origin_u_px": 320,
+  "origin_u_px": 280,
   "image_right_pos_x": -1,
   "x_bias": 0.0,
   "y_bias": 0.0,
-  "x_scale": 0.994415372316692,
-  "y_scale": 1.189705366556882
+  "x_scale": 1.1023047371858175,
+  "y_scale": 1.004467084931231,
+  "x_origin_shift_m": -0.020000000000000004
 }
