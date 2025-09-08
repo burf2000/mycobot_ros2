@@ -14,7 +14,7 @@ AZURE_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
 
 # ----------------- CONFIG -----------------
 
-CAM_INDEX = 1
+CAM_INDEX = 0
 
 # Heights (m)
 Z_APPROACH = 0.12
@@ -200,7 +200,8 @@ def call_azure_for_robot_xy(img_bgr) -> Dict[str, float]:
         " • +Y: toward the camera → DOWN in the image.\n"
         " • +X: robot's LEFT      → LEFT side of the image.\n"
         " • -X: robot's RIGHT     → RIGHT side of the image.\n\n"
-        "WORKSPACE: X ∈ [-0.28,+0.28] m, Y ∈ [0.00,+0.28] m.\n"
+        "The workspace is within the black 28cm radius half circle.\n"
+        # "WORKSPACE: X ∈ [-0.28,+0.28] m, Y ∈ [0.00,+0.28] m.\n"
         "TASK: Detect ONLY a red 2×2 LEGO brick. OUTPUT STRICT JSON {\"posX\":f,\"posY\":f,\"yaw_deg\":f,\"u\":f,\"v\":f}."
     )
     user_text = "Return only the JSON object."

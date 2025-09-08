@@ -1,237 +1,318 @@
 #!/usr/bin/env python3
 import os, time, math, json, base64
-from typing import Tuple, Dict
-import numpy as np
+from typing import Tuple, Dict, Optional
 import cv2
+import numpy as np
 import requests
 
-# ----------------- CONFIG -----------------
-
-# Azure OpenAI (Vision) settings
-AZURE_ENDPOINT   = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
-AZURE_API_KEY    = os.environ.get("AZURE_OPENAI_API_KEY", "")
-AZURE_API_VER    = os.environ.get("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
-AZURE_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
-
+# ------------ CONFIG / IO ------------
 CAM_INDEX = 0
 
-H_FILE = os.path.expanduser(
-    "~/mycobot_ws/src/mycobot_ros2/mycobot_pymoveit_api/mycobot_pymoveit_api/H_table.npy"
-)
+# Robot move endpoints
+MOVE_URL = "http://localhost:8080/move"
+GRIPPER_OPEN_URL  = "http://localhost:8080/gripper/open"
+GRIPPER_CLOSE_URL = "http://localhost:8080/gripper/close"
 
-Z_APPROACH = 0.10
+HOME_POSE = {
+    "posX": 0.06, "posY": 0.079, "posZ": 0.411,
+    "rotX": 0.03, "rotY": -0.382, "rotZ": 0.001, "rotW": 1.0
+}
+
+HIDE_POSE = {
+    "posX": 0.06, "posY": 0.005, "posZ": 0.444,
+    "rotX": 0.352, "rotY": -0.354, "rotZ": -0.143, "rotW": 0.854
+}
+
+
+# Heights (m)
+Z_APPROACH = 0.12
 Z_PICK     = 0.08
 
+# Safe tilt quaternion (will be yaw-rotated)
 SAFE_Q = (-0.491, -0.503, 0.520, 0.483)
 
-MOVE_URL = "http://localhost:8080/move"
+# Workspace geometry
+REACH_RADIUS_M = 0.28           # 28 cm semicircle
+KEEP_OUT_R_M   = 0.05           # 5 cm near the base
+ALLOW_NEG_Y    = False
 
-# Axis debug toggles
-SWAP_XY  = False     # we’re swapping because your frame showed X using the long edge
-INVERT_X = True
-INVERT_Y = False
-YAW_SIGN = +1
+# Yaw control
+FORCE_HORIZONTAL_YAW = False
+GRIPPER_WORLD_YAW_DEG = -90.0
+YAW_STEP = 5.0
 
-# NEW: fixed extra gripper rotation (clockwise = negative degrees here)
-GRIPPER_YAW_OFFSET_DEG = -90.0
+# Small trims (meters)
+X_BIAS = 0.000
+Y_BIAS = 0.000
+X_SCALE = 1.000
+Y_SCALE = 1.000
 
-# Round XY we send to the move API
-XY_DECIMALS = 3
+# Origin micro shifts (meters) — persisted
+X_ORIGIN_SHIFT_M = 0.000   # + shifts origin LEFT (X readings larger)
+Y_ORIGIN_SHIFT_M = 0.000   # + shifts origin DOWN (Y readings larger)
 
-# Workspace guard
-MAX_RADIUS = 0.28
-ALLOW_NEGATIVE_Y = False
+# Saved camera calibration (derived from circle)
+CFG_FILE = "vision_circle_calib.json"
+CAL = {
+    "cx": None,          # circle center u (px)
+    "cy": None,          # circle center v (px)
+    "r_px": None,        # circle radius (px)
+    "m_per_px": None,    # meters per pixel, = REACH_RADIUS_M / r_px
+    "x_origin_shift_m": 0.0,
+    "y_origin_shift_m": 0.0,
+    "x_bias": 0.0, "y_bias": 0.0, "x_scale": 1.0, "y_scale": 1.0
+}
 
-# ------------------------------------------
+# ------------ UTILS ------------
 
-if not os.path.exists(H_FILE):
-    raise FileNotFoundError(f"H file not found: {H_FILE}")
-H = np.load(H_FILE)
-Hinv = np.linalg.inv(H)
-print("[Info] Loaded H from:", H_FILE)
+def load_cfg():
+    global CAL, X_ORIGIN_SHIFT_M, Y_ORIGIN_SHIFT_M, X_BIAS, Y_BIAS, X_SCALE, Y_SCALE
+    try:
+        with open(CFG_FILE, "r") as f:
+            d = json.load(f)
+        CAL.update(d)
+        X_ORIGIN_SHIFT_M = float(CAL.get("x_origin_shift_m", 0.0))
+        Y_ORIGIN_SHIFT_M = float(CAL.get("y_origin_shift_m", 0.0))
+        X_BIAS = float(CAL.get("x_bias", 0.0))
+        Y_BIAS = float(CAL.get("y_bias", 0.0))
+        X_SCALE = float(CAL.get("x_scale", 1.0))
+        Y_SCALE = float(CAL.get("y_scale", 1.0))
+        print(f"[CFG] Loaded {CFG_FILE}: center=({CAL['cx']},{CAL['cy']}), r_px={CAL['r_px']}, m/px={CAL['m_per_px']:.6f} "
+              f"shifts(X,Y)=({X_ORIGIN_SHIFT_M:+.3f},{Y_ORIGIN_SHIFT_M:+.3f}) biases=({X_BIAS:+.3f},{Y_BIAS:+.3f})")
+    except Exception:
+        print("[CFG] No saved calibration; will auto-detect circle.")
 
-def b64_jpeg(img_bgr, quality=92) -> str:
-    ok, buf = cv2.imencode(".jpg", img_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
-    if not ok:
-        raise RuntimeError("JPEG encode failed")
+def save_cfg():
+    CAL["x_origin_shift_m"] = float(X_ORIGIN_SHIFT_M)
+    CAL["y_origin_shift_m"] = float(Y_ORIGIN_SHIFT_M)
+    CAL["x_bias"] = float(X_BIAS)
+    CAL["y_bias"] = float(Y_BIAS)
+    CAL["x_scale"] = float(X_SCALE)
+    CAL["y_scale"] = float(Y_SCALE)
+    try:
+        with open(CFG_FILE, "w") as f:
+            json.dump(CAL, f, indent=2)
+        print(f"[CFG] Saved -> {CFG_FILE}")
+    except Exception as e:
+        print("[CFG] Save failed:", e)
+
+def b64_jpeg(img_bgr, q=90):
+    ok, buf = cv2.imencode(".jpg", img_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), q])
+    if not ok: raise RuntimeError("jpeg encode failed")
+    import base64
     return base64.b64encode(buf.tobytes()).decode("utf-8")
 
-def yaw_about_z(q: Tuple[float,float,float,float], yaw_rad: float):
-    x1, y1, z1, w1 = q
+def yaw_about_z(q, yaw_rad):
+    x1,y1,z1,w1 = q
     cz, sz = math.cos(yaw_rad/2.0), math.sin(yaw_rad/2.0)
-    x2, y2, z2, w2 = 0.0, 0.0, sz, cz
+    x2,y2,z2,w2 = 0.0,0.0,sz,cz
     x = w2*x1 + x2*w1 + y2*z1 - z2*y1
     y = w2*y1 - x2*z1 + y2*w1 + z2*x1
     z = w2*z1 + x2*y1 - y2*x1 + z2*w1
     w = w2*w1 - x2*x1 - y2*y1 - z2*z1
-    return (x, y, z, w)
+    return (x,y,z,w)
 
-def pixel_to_xy(u: float, v: float, H: np.ndarray) -> Tuple[Tuple[float,float], Tuple[float,float]]:
-    """Return (X,Y) after toggles AND (X_raw,Y_raw) direct from H."""
-    pix = np.array([u, v, 1.0], dtype=np.float64)
-    w = H @ pix
-    X_raw = w[0] / w[2]
-    Y_raw = w[1] / w[2]
-
-    X, Y = X_raw, Y_raw
-    if SWAP_XY: X, Y = Y, X
-    if INVERT_X: X = -X
-    if INVERT_Y: Y = -Y
-    return (X, Y), (X_raw, Y_raw)
-
-def xy_to_pixel(X: float, Y: float) -> Tuple[int,int]:
-    Xi, Yi = X, Y
-    if INVERT_Y: Yi = -Yi
-    if INVERT_X: Xi = -Xi
-    if SWAP_XY:  Xi, Yi = Yi, Xi
-    P = np.array([Xi, Yi, 1.0], dtype=np.float64)
-    q = Hinv @ P
-    return int(round(q[0]/q[2])), int(round(q[1]/q[2]))
-
-def call_move(x, y, z, q, timeout=10.0):
-    # Round X/Y to 3 decimals before sending
-    xr = round(float(x), XY_DECIMALS)
-    yr = round(float(y), XY_DECIMALS)
-    zr = round(float(z), XY_DECIMALS)
-    body = {"posX": xr, "posY": yr, "posZ": zr,
-            "rotX": float(q[0]), "rotY": float(q[1]), "rotZ": float(q[2]), "rotW": float(q[3])}
+def call_move_pose(pose, timeout=15.0):
+    body = dict(pose)
+    for k in ("posX","posY","posZ"):
+        body[k] = round(float(body[k]), 3)
     print("[MOVE] ->", body)
     r = requests.post(MOVE_URL, json=body, timeout=timeout)
-    if r.status_code >= 400:
-        print("[MOVE][HTTP]", r.status_code, r.text[:200])
+    if r.status_code >= 400: print("[MOVE][HTTP]", r.status_code, r.text[:300])
     r.raise_for_status()
     return r.json() if r.text else {"ok": True}
 
-def call_azure_vision(img_bgr) -> Dict[str, float]:
-    img64 = b64_jpeg(img_bgr)
-    url = f"{AZURE_ENDPOINT}/openai/deployments/{AZURE_DEPLOYMENT}/chat/completions?api-version={AZURE_API_VER}"
-    headers = {"Content-Type":"application/json", "api-key":AZURE_API_KEY}
-    system_prompt = (
-        "You are a vision assistant for a myCobot_280 tabletop scene. "
-        "The robot and its gripper may be visible—IGNORE the robot entirely. "
-        "Focus ONLY on the A4 white paper area on the table. "
-        "Find the most salient small, non-white object ON THE PAPER (e.g., a red USB stick). "
-        "Return STRICT JSON: {\"u\":<float>,\"v\":<float>,\"yaw_deg\":<float>} "
-        "where (u,v) is the object's CENTER pixel (image origin top-left) and yaw_deg is the object's in-plane rotation "
-        "clockwise about the camera Z axis. No extra keys, no text."
-    )
-    user_text = "Return ONLY JSON. Example: {\"u\":512.3,\"v\":321.8,\"yaw_deg\":0.0}"
-    payload = {
-        "messages": [
-            {"role":"system","content":system_prompt},
-            {"role":"user","content": [
-                {"type":"text","text":user_text},
-                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{img64}"}}
-            ]}
-        ],
-        "temperature": 0.0,
-        "response_format": {"type":"json_object"}
-    }
-    resp = requests.post(url, headers=headers, json=payload, timeout=45)
-    resp.raise_for_status()
-    content = resp.json()["choices"][0]["message"]["content"]
-    det = json.loads(content)
-    for k in ("u","v","yaw_deg"):
-        if k not in det: raise ValueError(f"Azure response missing {k}")
-    return det
+def call_move(x,y,z,q, timeout=15.0):
+    return call_move_pose({"posX":float(x),"posY":float(y),"posZ":float(z),
+                           "rotX":q[0],"rotY":q[1],"rotZ":q[2],"rotW":q[3]}, timeout=timeout)
 
-def draw_axes(img):
-    u0,v0 = xy_to_pixel(0.0, 0.0)
-    ux,vx = xy_to_pixel(0.10, 0.00)
-    uy,vy = xy_to_pixel(0.00, 0.10)
-    cv2.circle(img,(u0,v0),6,(255,0,0),-1)
-    cv2.arrowedLine(img,(u0,v0),(ux,vx),(255,0,0),2,cv2.LINE_AA,0,0.25)  # +X
-    cv2.putText(img,"+X",(ux+6,vx-6),cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,0,0),2)
-    cv2.arrowedLine(img,(u0,v0),(uy,vy),(0,255,0),2,cv2.LINE_AA,0,0.25)  # +Y
-    cv2.putText(img,"+Y",(uy+6,vy-6),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0),2)
+def gripper_open():  requests.post(GRIPPER_OPEN_URL, timeout=8).raise_for_status()
+def gripper_close(): requests.post(GRIPPER_CLOSE_URL, timeout=8).raise_for_status()
 
+# ------------ DETECTION ------------
+
+def detect_circle(img_bgr) -> Optional[Tuple[float,float,float]]:
+    """
+    Detect the black semicircle as a circle (cx,cy,r_px) in the *camera image*.
+    Returns None if not found.
+    """
+    g = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    g = cv2.medianBlur(g, 5)
+    # emphasize dark ring
+    edges = cv2.Canny(g, 50, 120)
+    # Hough circle
+    circles = cv2.HoughCircles(edges, cv2.HOUGH_GRADIENT, dp=1.2, minDist=200,
+                               param1=120, param2=40, minRadius=150, maxRadius=900)
+    if circles is not None:
+        c = circles[0][0]
+        return float(c[0]), float(c[1]), float(c[2])
+    # fallback: contour fit
+    _,th = cv2.threshold(g, 0,255, cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+    th = cv2.morphologyEx(th, cv2.MORPH_OPEN, np.ones((5,5),np.uint8))
+    cnts,_ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts: return None
+    c = max(cnts, key=cv2.contourArea)
+    (x,y), r = cv2.minEnclosingCircle(c)
+    if r>150:
+        return float(x), float(y), float(r)
+    return None
+
+def detect_red_centroid(img_bgr):
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    m1 = cv2.inRange(hsv, (0, 90, 80), (10,255,255))
+    m2 = cv2.inRange(hsv, (170,90, 80), (180,255,255))
+    mask = cv2.bitwise_or(m1, m2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5,5),np.uint8))
+    cnts,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts: return None
+    c = max(cnts, key=cv2.contourArea)
+    a = cv2.contourArea(c)
+    if a < 60: return None
+    M = cv2.moments(c);  m00 = M["m00"]
+    if m00 == 0: return None
+    u = M["m10"]/m00; v = M["m01"]/m00
+    return float(u), float(v)
+
+def go_home():
+    try: gripper_open()
+    except Exception as e: print("[WARN] gripper open:", e)
+    try: call_move_pose(HIDE_POSE)
+    except Exception as e: print("[WARN] home move:", e)
+
+# ------------ MAPPING (camera opposite side) ------------
+def img_to_robot(u,v) -> Optional[Tuple[float,float]]:
+    """
+    Use current CAL (cx,cy,r_px) to convert a camera pixel (u,v) to robot (X,Y) in meters.
+    Polarity: +X is image-LEFT; +Y is image-DOWN (camera opposite).
+    """
+    cx,cy,r = CAL["cx"], CAL["cy"], CAL["r_px"]
+    m_per_px = CAL["m_per_px"]
+    if None in (cx,cy,r,m_per_px): return None
+    X = ((cx - u) * m_per_px) * X_SCALE + X_BIAS + X_ORIGIN_SHIFT_M
+    Y = ((v  - cy) * m_per_px) * Y_SCALE + Y_BIAS + Y_ORIGIN_SHIFT_M
+    return X, Y
+
+# ------------ OVERLAY ------------
+def draw_overlay(img, u, v, X, Y):
+    h,w = img.shape[:2]
+    cx,cy,r = CAL["cx"], CAL["cy"], CAL["r_px"]
+    # circle + center
+    if None not in (cx,cy,r):
+        cv2.circle(img, (int(cx),int(cy)), int(r), (0,255,255), 2)
+        cv2.drawMarker(img, (int(cx),int(cy)), (255,255,255), cv2.MARKER_CROSS, 18, 2)
+    # brick
+    if u is not None and v is not None:
+        cv2.circle(img, (int(u),int(v)), 8, (0,165,255), -1)
+    # text
+    cv2.putText(img, f"(X,Y)=({X:+.3f},{Y:+.3f}) m", (18,h-28),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,0,0), 2)
+    cv2.putText(img, f"m/px={CAL['m_per_px']:.6f}  shifts=({X_ORIGIN_SHIFT_M:+.3f},{Y_ORIGIN_SHIFT_M:+.3f})",
+                (18,h-52), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255,255,0), 2)
+
+# ------------ MAIN ------------
 def main():
-    if not (AZURE_ENDPOINT and AZURE_API_KEY and AZURE_DEPLOYMENT):
-        raise RuntimeError("Missing Azure env: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT")
+    global X_ORIGIN_SHIFT_M, Y_ORIGIN_SHIFT_M, X_BIAS, Y_BIAS, X_SCALE, Y_SCALE
+    load_cfg()
 
-    cv2.namedWindow("webcam", cv2.WINDOW_NORMAL)
+    cv2.namedWindow("cam", cv2.WINDOW_NORMAL | cv2.WINDOW_GUI_EXPANDED)
     cap = cv2.VideoCapture(CAM_INDEX)
     if not cap.isOpened():
-        raise RuntimeError(f"Cannot open camera {CAM_INDEX}")
+        raise RuntimeError("Cannot open camera")
 
     try:
-        print("Press 'c' to capture & move; 'v' capture only; 'q' quit.")
         while True:
             ok, frame = cap.read()
-            if not ok:
+            if not ok: continue
+
+            # 1) circle detect (update CAL if found)
+            found = detect_circle(frame)
+            if found is not None:
+                cx,cy,r = found
+                CAL["cx"], CAL["cy"], CAL["r_px"] = cx,cy,r
+                CAL["m_per_px"] = REACH_RADIUS_M / r
+            elif CAL["m_per_px"] is None:
+                cv2.imshow("cam", frame)
+                cv2.waitKey(10)
+                print("[WARN] Circle not found yet; no scale/origin. Move/lighting?")
+                continue  # we need at least one calibration
+
+            # 2) brick centroid
+            uv = detect_red_centroid(frame)
+            X = Y = None
+            if uv is not None:
+                u,v = uv
+                xy = img_to_robot(u,v)
+                if xy is not None:
+                    X,Y = xy
+
+            # 3) overlay
+            disp = frame.copy()
+            if uv is not None:
+                draw_overlay(disp, u, v, X, Y)
+            else:
+                draw_overlay(disp, None, None, 0.0, 0.0)
+            cv2.putText(disp, "s=save  [/] Xshift +-1mm  ;/' Yshift +-1mm  1..8 trims  g yaw  9/0 yaw step  c=pick  q=quit",
+                        (12,28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0,255,0), 2)
+            cv2.imshow("cam", disp)
+
+            # 4) keys
+            k = cv2.waitKey(10) & 0xFF
+            if k == ord('q'): break
+            if k == ord('s'): save_cfg(); continue
+            if k == ord('['): X_ORIGIN_SHIFT_M -= 0.001; print("X_SHIFT",X_ORIGIN_SHIFT_M); continue
+            if k == ord(']'): X_ORIGIN_SHIFT_M += 0.001; print("X_SHIFT",X_ORIGIN_SHIFT_M); continue
+            if k == ord(';'): Y_ORIGIN_SHIFT_M -= 0.001; print("Y_SHIFT",Y_ORIGIN_SHIFT_M); continue
+            if k == ord('\''): Y_ORIGIN_SHIFT_M += 0.001; print("Y_SHIFT",Y_ORIGIN_SHIFT_M); continue
+            if k == ord('1'): X_BIAS -= 0.005; print("X_BIAS",X_BIAS); continue
+            if k == ord('2'): X_BIAS += 0.005; print("X_BIAS",X_BIAS); continue
+            if k == ord('3'): Y_BIAS -= 0.005; print("Y_BIAS",Y_BIAS); continue
+            if k == ord('4'): Y_BIAS += 0.005; print("Y_BIAS",Y_BIAS); continue
+            if k == ord('5'): X_SCALE *= 0.99;  print("X_SCALE",X_SCALE); continue
+            if k == ord('6'): X_SCALE *= 1.01;  print("X_SCALE",X_SCALE); continue
+            if k == ord('7'): Y_SCALE *= 0.99;  print("Y_SCALE",Y_SCALE); continue
+            if k == ord('8'): Y_SCALE *= 1.01;  print("Y_SCALE",Y_SCALE); continue
+
+            if k == ord('h'):
+                print("[RESET] Home…"); 
+                go_home()
                 continue
 
-            view = frame.copy()
-            draw_axes(view)
-            cv2.putText(view, "c=capture+move, v=capture, q=quit",
-                        (12,28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0), 2)
-            cv2.imshow("webcam", view)
-            key = cv2.waitKey(10) & 0xFF
-            if key == ord('q'):
-                break
-            if key not in (ord('c'), ord('v')):
-                continue
 
-            img = frame.copy()
-            try:
-                det = call_azure_vision(img)
-                u = float(det["u"]); v = float(det["v"]); yaw_deg = float(det["yaw_deg"])
-                print(f"[Azure] u={u:.1f}, v={v:.1f}, yaw={yaw_deg:.1f} deg")
-
-                # Raw detection overlay
-                dbg = img.copy()
-                cv2.circle(dbg,(int(u),int(v)),8,(0,0,255),-1)
-                ang_img = math.radians(-yaw_deg)  # image v grows downward
-                x2 = int(u + 60*math.cos(ang_img))
-                y2 = int(v + 60*math.sin(ang_img))
-                cv2.arrowedLine(dbg,(int(u),int(v)),(x2,y2),(0,255,0),2,cv2.LINE_AA,0,0.30)
-                cv2.putText(dbg, f"(u,v)=({int(round(u))},{int(round(v))})",
-                            (int(u)+10, int(v)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
-
-                # Map to robot XY (final + raw)
-                (X, Y), (X_raw, Y_raw) = pixel_to_xy(u, v, H)
-
-                # Reproject final (X,Y) for error check
-                uu, vv = xy_to_pixel(X, Y)
-                cv2.circle(dbg,(uu,vv),6,(255,0,0),-1)
-                pix_err = math.hypot(uu - u, vv - v)
-
-                # Labels: round to 3 decimals in overlay
-                Xr, Yr = round(X, XY_DECIMALS), round(Y, XY_DECIMALS)
-                cv2.putText(dbg, f"(X,Y)=({Xr:.3f},{Yr:.3f}) m  err={pix_err:.1f}px",
-                            (uu+10, vv+20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,0,0), 2)
-
-                draw_axes(dbg)
-                cv2.imshow("detection", dbg)
-                cv2.imwrite("last_detection_debug.jpg", dbg)
-                print(f"[Map] X={Xr:.3f}, Y={Yr:.3f} | err={pix_err:.1f}px")
-
-                # Guards
-                if not ALLOW_NEGATIVE_Y and Y < 0.0:
-                    #print(f("[SKIP] Y={:.3f} < 0 (disallowed).").format(Y))
+            # 5) pick
+            if k == ord('c') and uv is not None and X is not None and Y is not None:
+                r = math.hypot(X,Y)
+                if r < KEEP_OUT_R_M: 
+                    print(f"[SKIP] inside keep-out (r={r:.3f})"); 
                     continue
-                if math.hypot(X, Y) > MAX_RADIUS:
-                    print(f"[SKIP] Outside radius {MAX_RADIUS} m."); continue
+                if (not ALLOW_NEG_Y) and Y < 0:
+                    print(f"[SKIP] Y={Y:.3f} < 0"); 
+                    continue
+                if r > REACH_RADIUS_M:
+                    print(f"[SKIP] outside reach (r={r:.3f})");
+                    continue
 
-                # Compose orientation: Azure yaw + fixed gripper offset
-                if key == ord('c'):
-                    yaw_total_deg = (YAW_SIGN * yaw_deg) + GRIPPER_YAW_OFFSET_DEG
-                    qx,qy,qz,qw = yaw_about_z(SAFE_Q, math.radians(yaw_total_deg))
-                    print(f"[MOVE] Using yaw_total_deg={yaw_total_deg:.1f}")
-
-                    print("[MOVE] Approach high…")
-                    call_move(Xr, Yr, Z_APPROACH, (qx,qy,qz,qw))
-                    time.sleep(0.2)
-                    print("[MOVE] Drop to pick…")
-                    call_move(Xr, Yr, Z_PICK, (qx,qy,qz,qw))
-                    print("[OK] Sent.")
-
-            except Exception as e:
-                print("[ERROR]", e)
+                # Yaw (simple: keep horizontal, or 45deg if you like)
+                yaw_deg = GRIPPER_WORLD_YAW_DEG if FORCE_HORIZONTAL_YAW else 45.0
+                qx,qy,qz,qw = yaw_about_z(SAFE_Q, math.radians(yaw_deg))
+                print(f"[MOVE] Approach X={X:.3f} Y={Y:.3f} Z={Z_APPROACH:.3f} yaw={yaw_deg:.1f}")
+                try:
+                    gripper_open()
+                except Exception as e:
+                    print("[WARN] gripper", e)
+                time.sleep(1)
+                call_move(X,Y,Z_APPROACH,(qx,qy,qz,qw))
+                time.sleep(2)
+                call_move(X,Y,Z_PICK,(qx,qy,qz,qw))
+                time.sleep(2)
+                try:
+                    gripper_close()
+                except Exception as e:
+                    print("[WARN] gripper", e)
+                time.sleep(2)
+                call_move_pose(HIDE_POSE)
 
     finally:
-        cap.release()
-        cv2.destroyAllWindows()
+        cap.release(); cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
