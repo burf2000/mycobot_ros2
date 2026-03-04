@@ -26,6 +26,7 @@ setup(
             'sync_plan = mycobot_pymoveit_api.sync_plan:main',
             'sync_plan_hardware = mycobot_pymoveit_api.sync_plan_hardware:main',
             'display = mycobot_pymoveit_api.display:main',
+            'pick_red_brick = mycobot_pymoveit_api.pick_red_brick:main',
         ],
     },
 )

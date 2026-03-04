@@ -15,10 +15,31 @@ rqt_graph
 ros2 node info /node
 
 ## Steps to run
-```bash
-# Launches everything (RVIZ, MoveIt, Gazebo, API, USB connection to real arm)
-$ bash ~/mycobot_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_gazebo_and_moveit.sh
 
+### Option A: Gazebo simulation + real hardware
+Launches Gazebo, MoveIt, RViz, the HTTP API, and `sync_plan` (which mirrors
+Gazebo joint states to the physical arm over USB serial).
+
+```bash
+$ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_gazebo_and_moveit.sh
+```
+
+### Option B: Real hardware only (no Gazebo)
+Launches a standalone ros2_control controller manager with mock hardware,
+MoveIt, RViz, the HTTP API, and `sync_plan` (which forwards planned joint
+states to the physical arm over USB serial). No Gazebo window is opened.
+
+```bash
+$ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_moveit_api.sh
+```
+
+**Requirements for Option B:**
+- myCobot 280 M5 connected via USB (`/dev/ttyUSB0`)
+- Atom firmware >= 6.5, pymycobot >= 3.6.1
+
+### Common commands
+
+```bash
 # run visual script
 $ ros2 run mycobot_pymoveit_api display
 

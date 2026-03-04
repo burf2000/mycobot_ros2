@@ -7,6 +7,9 @@
                 <xacro:if value="${use_gazebo}">
                     <plugin>gz_ros2_control/GazeboSimSystem</plugin>
                 </xacro:if>
+                <xacro:unless value="${use_gazebo}">
+                    <plugin>mock_components/GenericSystem</plugin>
+                </xacro:unless>
             </hardware>
 
             <joint name="${prefix}link1_to_${prefix}link2">

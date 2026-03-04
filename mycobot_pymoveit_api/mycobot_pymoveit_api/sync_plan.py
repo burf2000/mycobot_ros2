@@ -56,6 +56,9 @@ class Slider_Subscriber(Node):
             'gripper_controller'
         ]
 
+        # Track last gripper value to avoid flooding serial port
+        self._last_gripper_value = None
+
     def listener_callback(self, msg):
         # Create a dictionary mapping joint names to their current positions
         joint_state_dict = {name: msg.position[i] for i, name in enumerate(msg.name)}
@@ -75,29 +78,18 @@ class Slider_Subscriber(Node):
         self.mc.send_angles(data_list[:6], 35)
 
         if gripper_angle is not None:
-            #-30 closed, 9 max open
-            # Example mapping: fully open = 0, fully closed = 100 (adjust as needed)
-            # Map gripper_angle from [-30, 10] to [0, 100]
-
-
-            # if gripper_angle < -30:
-            #     gripper_angle = -30
-
-            # gripper_angle_clamped = max(-30, min(10, gripper_angle))  # Clamp to valid range
-            # gripper_value = int((gripper_angle_clamped + 30) * (100 / 40))  # Normalize and scale    
-
-            
-            # API gripper open -0.0 comes in, set value to 90
-            # API gripper closed -34 comes in, set value to 0
-
-            gripper_value = 0
-
-            if gripper_angle == 0.0:
+            # API gripper open ~0.0 degrees, set value to 90
+            # API gripper closed ~-34 degrees, set value to 0
+            if abs(gripper_angle) < 1.0:
                 gripper_value = 90
+            else:
+                gripper_value = 0
 
-            # print(f'Gripper: {gripper_value} {gripper_angle}')
-
-            self.mc.set_gripper_value(gripper_value, 50, 1)  # speed=50, tune as needed
+            # Only send gripper command when value changes
+            if gripper_value != self._last_gripper_value:
+                print(f'Gripper: {gripper_value} (angle={gripper_angle})')
+                self.mc.set_gripper_value(gripper_value, 50, 1)
+                self._last_gripper_value = gripper_value
 
         
 

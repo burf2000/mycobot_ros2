@@ -4,3 +4,5 @@ build/
 install/
 
 log/
+
+mycobot_pymoveit_api/mycobot_pymoveit_api/__pycache__/

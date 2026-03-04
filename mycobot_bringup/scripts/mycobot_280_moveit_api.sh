@@ -1,42 +1,47 @@
 #!/bin/bash
-# Single script to launch mycobot with full ros2_control support
+# Launch mycobot with MoveIt 2 for real hardware (no Gazebo).
+#
+# Uses mock_components/GenericSystem so ros2_control controllers exist
+# for MoveIt to talk to, then sync_plan forwards joint_states to the
+# physical arm over serial.
+
+# Clear snap environment variables that conflict with RViz/GUI rendering
+unset LOCPATH
+unset GTK_PATH
+unset GTK_IM_MODULE_FILE
+unset GTK_EXE_PREFIX
 
 cleanup() {
   echo "Cleaning up..."
   sleep 5
-  pkill -9 -f "ros2||robot_state_publisher|move_group|gz_ros2_control|ros2_control_node|*pymoveit_api*"
+  pkill -9 -f "ros2|robot_state_publisher|move_group|ros2_control_node|pymoveit_api"
 }
 trap 'cleanup' SIGINT SIGTERM
 
-# 1️⃣ Start robot_state_publisher (URDF)
+# 1. Robot state publisher (URDF, no Gazebo)
 ros2 launch mycobot_description robot_state_publisher.launch.py \
-  use_sim_time:=false sim:=false use_gazebo:=false use_rviz:=false jsp_gui:=false &
+  use_sim_time:=false use_gazebo:=false use_rviz:=false jsp_gui:=false &
 
-# 2️⃣ Launch controller manager (ros2_control_node) for hardware mode
+# 2. Standalone controller manager (mock hardware)
+sleep 2
 ros2 launch mycobot_moveit_config ros2_control_node.launch.py \
-  use_sim_time:=false sim:=false &
+  use_sim_time:=false &
 
-# 3️⃣ Load joint_state_broadcaster, arm_controller, gripper controller
-sleep 3
-ros2 launch mycobot_moveit_config load_ros2_controllers.launch.py \
-  use_sim_time:=false sim:=false &
+# 3. Load controllers (joint_state_broadcaster -> arm_controller -> gripper)
+sleep 5
+ros2 launch mycobot_moveit_config load_ros2_controllers.launch.py &
 
-# 4️⃣ Start MoveIt move_group
-sleep 3
-ros2 launch mycobot_moveit_config move_group.launch.py &
+# 4. MoveIt move_group
+sleep 8
+ros2 launch mycobot_moveit_config move_group.launch.py \
+  use_sim_time:=false &
 
-# 5️⃣ Optional Gazebo camera control (will be a no-op if Gazebo isn't running)
-echo "Adjusting camera position..."
-gz service -s /gui/move_to/pose --reqtype gz.msgs.GUICamera \
-  --reptype gz.msgs.Boolean --timeout 2000 \
-  --req "pose: {position: {x: 1.36, y: -0.58, z: 0.95}, orientation: {x: -0.26, y: 0.1, z: 0.89, w: 0.35}}"
-
-# 6️⃣ Start your Flask API
+# 5. Flask HTTP API
 sleep 5
 ros2 launch mycobot_pymoveit_api api.launch.py &
 
-# 7️⃣ Launch your hardware sync node
+# 6. Forward joint_states to real hardware over serial
 sleep 5
-ros2 run mycobot_pymoveit_api sync_plan_hardware &
+ros2 run mycobot_pymoveit_api sync_plan &
 
 wait

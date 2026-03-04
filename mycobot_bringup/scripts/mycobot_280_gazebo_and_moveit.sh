@@ -1,6 +1,13 @@
 #!/bin/bash
 # Single script to launch the mycobot with Gazebo, RViz, and MoveIt 2
 
+# Clear snap environment variables that conflict with Gazebo GUI rendering
+# (VS Code snap sets LOCPATH which causes gz sim gui to load incompatible snap glibc)
+unset LOCPATH
+unset GTK_PATH
+unset GTK_IM_MODULE_FILE
+unset GTK_EXE_PREFIX
+
 cleanup() {
     echo "Cleaning up..."
     sleep 5.0
@@ -35,9 +42,9 @@ sleep 5
 
 ros2 launch mycobot_pymoveit_api api.launch.py &
 
-# sleep 5
+sleep 5
 
-# ros2 run mycobot_pymoveit_api sync_plan &
+ros2 run mycobot_pymoveit_api sync_plan &
 
 # Keep the script running until Ctrl+C
 wait
