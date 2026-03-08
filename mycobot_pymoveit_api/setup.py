@@ -28,6 +28,7 @@ setup(
             'display = mycobot_pymoveit_api.display:main',
             'pick_red_brick = mycobot_pymoveit_api.pick_red_brick:main',
             'pick_red_brick_v2 = mycobot_pymoveit_api.pick_red_brick_v2:main',
+            'pick_red_brick_ros = mycobot_pymoveit_api.pick_red_brick_ros:main',
         ],
     },
 )

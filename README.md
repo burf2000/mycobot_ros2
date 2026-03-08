@@ -37,6 +37,29 @@ $ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_moveit_api
 - myCobot 280 M5 connected via USB (`/dev/ttyUSB0`)
 - Atom firmware >= 6.5, pymycobot >= 3.6.1
 
+### Option C: Real hardware + USB cameras (no Gazebo)
+Same as Option B but also launches overhead and gripper USB cameras as ROS2
+topics via `v4l2_camera`.
+
+```bash
+$ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_moveit_api_camera.sh
+```
+
+**Additional requirements for Option C:**
+- `sudo apt-get install -y ros-jazzy-v4l2-camera`
+- Overhead camera at `/dev/video0`, gripper camera at `/dev/video2`
+- Camera topics: `/camera/overhead/image_raw`, `/camera/gripper/image_raw`
+
+### Pick-and-place demos
+
+```bash
+# Option B/C — uses HTTP API + cv2.VideoCapture
+$ ros2 run mycobot_pymoveit_api pick_red_brick_v2
+
+# Option C only — pure ROS2 (no HTTP API, uses camera topics directly)
+$ ros2 run mycobot_pymoveit_api pick_red_brick_ros
+```
+
 ### Common commands
 
 ```bash
