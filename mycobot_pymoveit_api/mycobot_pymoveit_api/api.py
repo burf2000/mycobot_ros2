@@ -12,6 +12,14 @@ from pymoveit2 import MoveIt2
 app = Flask(__name__)
 moveit2: MoveIt2 = None
 gripper_interface: GripperInterface = None
+gripper_moveit2: MoveIt2 = None
+
+# Named gripper states from SRDF
+GRIPPER_STATES = {
+    "open": [0.0],
+    "half_closed": [-0.34],
+    "closed": [-0.50],
+}
 
 
 @app.route("/gripper/<action>", methods=["POST"])
@@ -31,6 +39,31 @@ def gripper(action):
         #gripper_interface.wait_until_executed()
 
     return jsonify(status="success"), 200
+
+
+@app.route("/gripper_moveit/<action>", methods=["POST"])
+def gripper_moveit(action):
+    """Move gripper via MoveIt planning group (like RViz does)."""
+    if action not in GRIPPER_STATES:
+        return jsonify(error=f"Invalid action. Use: {list(GRIPPER_STATES.keys())}"), 400
+
+    app.logger.info(f'Gripper MoveIt action: "{action}"')
+    joint_positions = GRIPPER_STATES[action]
+
+    traj = gripper_moveit2.plan(joint_positions=joint_positions)
+    if traj is None:
+        app.logger.error("Gripper planning failed")
+        return jsonify(status="planning_failed"), 500
+
+    gripper_moveit2.execute(traj)
+    exec_ok = gripper_moveit2.wait_until_executed()
+
+    if not exec_ok:
+        app.logger.error(f"Gripper execution failed: {exec_ok}")
+        return jsonify(status="execution_failed"), 500
+
+    return jsonify(status="success"), 200
+
 
 @app.route('/move', methods=['POST'])
 def move():
@@ -71,7 +104,7 @@ def move():
 
 
 def main():
-    global moveit2, gripper_interface
+    global moveit2, gripper_interface, gripper_moveit2
     rclpy.init()
     node = rclpy.create_node('mycobot_pymoveit_api')
     cbg = ReentrantCallbackGroup()
@@ -83,6 +116,15 @@ def main():
         end_effector_name='gripper_base',
         group_name='arm',
         callback_group=cbg
+    )
+
+    gripper_moveit2 = MoveIt2(
+        node=node,
+        joint_names=['gripper_controller'],
+        base_link_name='base_link',
+        end_effector_name='gripper_left',
+        group_name='gripper',
+        callback_group=cbg,
     )
 
     gripper_interface = GripperInterface(
