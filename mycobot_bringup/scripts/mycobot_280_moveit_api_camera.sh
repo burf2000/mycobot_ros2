@@ -13,6 +13,13 @@ unset GTK_PATH
 unset GTK_IM_MODULE_FILE
 unset GTK_EXE_PREFIX
 
+# Isolate this robot to loopback. The myCobot pick is entirely single-host;
+# without this, another ROS2 machine on the LAN (DDS domain 0) leaks its
+# /joint_states (foreign joint names + empty msgs) into this graph, which
+# floods pymoveit2 with "Joint states not available" and can feed sync_plan
+# bad data. Loopback-only removes that cross-talk.
+export ROS_LOCALHOST_ONLY=1
+
 cleanup() {
   echo "Cleaning up..."
   sleep 5

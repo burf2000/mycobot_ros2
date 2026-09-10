@@ -51,15 +51,45 @@ $ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_moveit_api
 - Camera topics: `/camera/overhead/image_raw`, `/camera/gripper/image_raw`
 
 
-### Pick-and-place demos
+### Pick-and-place: two-camera red-brick pick
+
+`pick_red_brick_ros` is the working pure-ROS2 two-camera pick: the **overhead
+camera** gives a coarse brick position, the **gripper (wrist) camera** fine-aligns,
+then the arm descends and grips. No HTTP API - it reads the camera topics
+directly and drives the arm via MoveIt + `sync_plan`.
 
 ```bash
-# Option B/C — uses HTTP API + cv2.VideoCapture
-$ ros2 run mycobot_pymoveit_api pick_red_brick_v2
+# 1. Bring up arm + MoveIt + cameras + sync_plan (Option C)
+$ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_moveit_api_camera.sh
 
-# Option C only — pure ROS2 (no HTTP API, uses camera topics directly)
+# 2. Place the red brick inside the black workspace circle, then:
 $ ros2 run mycobot_pymoveit_api pick_red_brick_ros
 ```
+
+**How it works**
+1. Overhead camera detects the red brick and maps its pixel to a robot XY using
+   the workspace-circle calibration in `vision_circle_calib.json`.
+2. The arm moves to that coarse XY; the gripper camera fine-aligns on the brick.
+3. The arm descends, closes the gripper, retracts, and verifies with the overhead camera.
+
+**Vision calibration - `vision_circle_calib.json`** maps the workspace-circle
+centre/radius (pixels) to metres. **If the overhead camera is moved it MUST be
+re-fitted**, or the coarse move will be off. The circle centre often sits off the
+top of the frame, so fit a circle to the *visible arc* (least-squares / RANSAC) -
+a full-circle Hough detect clamps the centre to the frame edge and is wrong.
+
+**Notes**
+- The bringup script exports `ROS_LOCALHOST_ONLY=1` so another ROS2 machine on the
+  LAN cannot leak its `/joint_states` into this graph (foreign joint names flood
+  pymoveit2 and can feed `sync_plan` bad data).
+- `move_group` is launched headless in the bringup; if you run it separately over
+  SSH use `use_rviz:=false` (RViz cannot open a display and its exit otherwise
+  shuts down `move_group`).
+- Set `PICK_DEBUG_DIR=/tmp/dbg` to dump gripper-camera frames + red masks per
+  fine-align iteration when debugging detection.
+
+The older `pick_red_brick_v2` (HTTP API + `cv2.VideoCapture`) is kept for reference;
+`pick_red_brick_ros` is the maintained two-camera path.
 
 ### Common commands
 

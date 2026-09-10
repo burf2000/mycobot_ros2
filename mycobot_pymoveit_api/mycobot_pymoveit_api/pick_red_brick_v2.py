@@ -81,8 +81,8 @@ FLUSH_FRAMES      = 5
 DETECT_RETRIES    = 3
 
 # ─── Camera indices ───
-CAM_INDEX_OVERHEAD = 2
-CAM_INDEX_GRIPPER  = 4
+CAM_INDEX_OVERHEAD = 0  # Sonix overhead = /dev/video0
+CAM_INDEX_GRIPPER  = 2  # Suyin gripper/wrist = /dev/video2
 
 # ─── Gripper camera fine-alignment parameters ───
 # Separate gains per axis (m/pixel). Flip sign if axis moves wrong way.

@@ -24,6 +24,21 @@ from threading import Thread, Lock
 import cv2
 import numpy as np
 
+# Headless support: if OpenCV has no GUI backend (headless build / no display),
+# neuter the GUI calls so the pick runs autonomously without a preview window.
+HEADLESS = False
+try:
+    cv2.namedWindow("__probe__", cv2.WINDOW_NORMAL); cv2.destroyWindow("__probe__")
+except Exception:
+    HEADLESS = True
+    cv2.namedWindow = lambda *a, **k: None
+    cv2.imshow = lambda *a, **k: None
+    cv2.destroyWindow = lambda *a, **k: None
+    cv2.destroyAllWindows = lambda *a, **k: None
+    cv2.waitKey = lambda *a, **k: -1
+    cv2.getWindowProperty = lambda *a, **k: 1.0   # report "window visible" so should_quit() doesn't false-fire
+    print("[GUI] OpenCV has no display backend - running HEADLESS (auto-start on brick detection).")
+
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -32,6 +47,9 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 # Note: ReentrantCallbackGroup used by MoveIt, cameras get their own node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
+
+from rclpy.action import ActionClient
+from control_msgs.action import GripperCommand
 
 from pymoveit2 import MoveIt2
 
@@ -116,6 +134,15 @@ WIN_GRIPPER  = "Gripper Camera"
 # ─── Gripper joint states ───
 GRIPPER_OPEN   = [0.0]
 GRIPPER_CLOSED = [-0.50]
+
+# ─── Optional debug frame dump (set PICK_DEBUG_DIR to enable) ───
+DEBUG_DIR = os.environ.get("PICK_DEBUG_DIR")
+if DEBUG_DIR:
+    try:
+        os.makedirs(DEBUG_DIR, exist_ok=True)
+        print(f"[DEBUG] Dumping gripper-cam frames to {DEBUG_DIR}")
+    except Exception:
+        DEBUG_DIR = None
 
 # ─── Calibration file ───
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -258,26 +285,68 @@ def move_pose_and_settle(moveit2: MoveIt2, pose):
     return move_and_settle(moveit2, pose["posX"], pose["posY"], pose["posZ"], q)
 
 
-def gripper_open(gripper_moveit2: MoveIt2):
-    print("[GRIPPER] Opening...")
-    traj = gripper_moveit2.plan(joint_positions=GRIPPER_OPEN)
-    if traj is None:
-        print("[GRIPPER] Open planning failed")
-        return
-    gripper_moveit2.execute(traj)
-    gripper_moveit2.wait_until_executed()
-    print("[GRIPPER] Open done")
+class GripperDriver:
+    """Drives the real gripper via its GripperActionController.
+
+    The gripper is a position_controllers/GripperActionController exposing the
+    control_msgs/action/GripperCommand action at /gripper_action_controller/gripper_cmd.
+    Driving it through MoveIt (plan/execute on the "gripper" group) hangs, so we
+    talk to the action server directly. Position is the joint target
+    (0.0 = open, GRIPPER_CLOSED[0] = closed); the node's background executor
+    services the futures, so we just poll them.
+    """
+
+    ACTION = "/gripper_action_controller/gripper_cmd"
+
+    def __init__(self, node: Node):
+        self._node = node
+        self._client = ActionClient(node, GripperCommand, self.ACTION)
+
+    def _send(self, position: float, max_effort: float = 50.0, timeout: float = 8.0) -> bool:
+        if not self._client.wait_for_server(timeout_sec=5.0):
+            print(f"[GRIPPER] action server {self.ACTION} not available")
+            return False
+        goal = GripperCommand.Goal()
+        goal.command.position = float(position)
+        goal.command.max_effort = float(max_effort)
+        deadline = time.time() + timeout
+        send_fut = self._client.send_goal_async(goal)
+        while not send_fut.done() and time.time() < deadline and not _shutdown:
+            time.sleep(0.05)
+        if not send_fut.done():
+            print("[GRIPPER] goal send timed out")
+            return False
+        gh = send_fut.result()
+        if gh is None or not gh.accepted:
+            print("[GRIPPER] goal rejected")
+            return False
+        res_fut = gh.get_result_async()
+        while not res_fut.done() and time.time() < deadline and not _shutdown:
+            time.sleep(0.05)
+        if not res_fut.done():
+            print("[GRIPPER] result timed out (goal sent, motion may still finish)")
+            return False
+        return True
+
+    def open(self) -> bool:
+        print("[GRIPPER] Opening...")
+        ok = self._send(GRIPPER_OPEN[0])
+        print("[GRIPPER] Open done" if ok else "[GRIPPER] Open failed")
+        return ok
+
+    def close(self) -> bool:
+        print("[GRIPPER] Closing...")
+        ok = self._send(GRIPPER_CLOSED[0])
+        print("[GRIPPER] Close done" if ok else "[GRIPPER] Close failed")
+        return ok
 
 
-def gripper_close(gripper_moveit2: MoveIt2):
-    print("[GRIPPER] Closing...")
-    traj = gripper_moveit2.plan(joint_positions=GRIPPER_CLOSED)
-    if traj is None:
-        print("[GRIPPER] Close planning failed")
-        return
-    gripper_moveit2.execute(traj)
-    gripper_moveit2.wait_until_executed()
-    print("[GRIPPER] Close done")
+def gripper_open(gripper: "GripperDriver"):
+    gripper.open()
+
+
+def gripper_close(gripper: "GripperDriver"):
+    gripper.close()
 
 
 def go_hide(moveit2: MoveIt2):
@@ -507,11 +576,23 @@ def gripper_cam_fine_align(moveit2: MoveIt2, cam_gripper: CameraSubscriber,
             print(f"[GRIPPER-CAM] Settling ({GRIPPER_SETTLE_SECS}s)...")
             settle_end = time.monotonic() + GRIPPER_SETTLE_SECS
             last_uv = None
+            _dbg_saved = False
             while time.monotonic() < settle_end:
                 if _shutdown or should_quit(WIN_GRIPPER):
                     break
                 frame = cam_gripper.get_frame()
                 if frame is not None:
+                    if DEBUG_DIR and not _dbg_saved:
+                        try:
+                            hsv_d = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+                            m1d = cv2.inRange(hsv_d, (0, 90, 80), (10, 255, 255))
+                            m2d = cv2.inRange(hsv_d, (170, 90, 80), (180, 255, 255))
+                            cv2.imwrite(f"{DEBUG_DIR}/grip_iter{iteration:02d}.png", frame)
+                            cv2.imwrite(f"{DEBUG_DIR}/grip_iter{iteration:02d}_redmask.png",
+                                        cv2.bitwise_or(m1d, m2d))
+                            _dbg_saved = True
+                        except Exception:
+                            pass
                     disp = frame.copy()
                     h, w = frame.shape[:2]
                     target_uv = (w * GRIPPER_CAM_TARGET_U_FRAC,
@@ -608,7 +689,7 @@ def gripper_cam_fine_align(moveit2: MoveIt2, cam_gripper: CameraSubscriber,
 
 # ═══════════════════════  MAIN PICK SEQUENCE  ═══════════════════════
 
-def visual_servo_pick(moveit2: MoveIt2, gripper_moveit2: MoveIt2,
+def visual_servo_pick(moveit2: MoveIt2, gripper: "GripperDriver",
                       cam_overhead: CameraSubscriber, cam_gripper: CameraSubscriber):
     """Full autonomous two-camera visual-servoing pick sequence."""
 
@@ -617,7 +698,7 @@ def visual_servo_pick(moveit2: MoveIt2, gripper_moveit2: MoveIt2,
     # ── Phase 1: Detect with overhead camera, move arm ONCE ──
     print("\n=== Phase 1: Overhead detect + coarse move ===")
     try:
-        gripper_open(gripper_moveit2)
+        gripper_open(gripper)
     except Exception as e:
         print(f"[WARN] gripper open: {e}")
     if _shutdown:
@@ -687,7 +768,7 @@ def visual_servo_pick(moveit2: MoveIt2, gripper_moveit2: MoveIt2,
 
     print("[PICK] Closing gripper...")
     try:
-        gripper_close(gripper_moveit2)
+        gripper_close(gripper)
     except Exception as e:
         print(f"[WARN] gripper close: {e}")
     interruptible_sleep(1.0)
@@ -738,15 +819,6 @@ def main():
         callback_group=cbg,
     )
 
-    gripper_moveit2 = MoveIt2(
-        node=node,
-        joint_names=["gripper_controller"],
-        base_link_name="base_link",
-        end_effector_name="gripper_left",
-        group_name="gripper",
-        callback_group=cbg,
-    )
-
     # ── Separate camera node + executor ──
     # pymoveit2 monopolises the MoveIt executor during planning/execution,
     # which starves any other callbacks on the same node.  A dedicated
@@ -759,6 +831,13 @@ def main():
     cam_executor.add_node(cam_node)
     cam_spin = Thread(target=cam_executor.spin, daemon=True)
     cam_spin.start()
+
+    # The gripper is driven directly via its GripperActionController (GripperCommand
+    # action), NOT via MoveIt — the MoveIt "gripper" group route hangs on this robot.
+    # It is attached to cam_node (not the MoveIt node): MoveIt monopolises its own
+    # executor during planning/execution, which would starve the gripper action's
+    # response future and make close() time out. cam_executor is always free.
+    gripper = GripperDriver(cam_node)
 
     moveit_executor = MultiThreadedExecutor()
     moveit_executor.add_node(node)
@@ -824,11 +903,17 @@ def main():
 
             if _shutdown:
                 return
+            if HEADLESS:
+                # No keypress possible: auto-start once the brick is detected.
+                if robot_xy is not None:
+                    print(f"[START] Headless auto-start - brick detected at {robot_xy}.")
+                    break
+                continue
             if key == ord('s'):
                 print("[START] Beginning pick sequence...")
                 break
 
-        success = visual_servo_pick(moveit2, gripper_moveit2,
+        success = visual_servo_pick(moveit2, gripper,
                                     cam_overhead, cam_gripper)
 
         if success:
@@ -836,7 +921,7 @@ def main():
         else:
             print("\n*** Pick did not succeed. ***")
 
-        if not _shutdown:
+        if not _shutdown and not HEADLESS:
             print("[DONE] Press any key to exit.")
             while not _shutdown:
                 key = cv2.waitKey(200) & 0xFF
