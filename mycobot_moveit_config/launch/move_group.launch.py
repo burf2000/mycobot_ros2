@@ -111,7 +111,7 @@ def generate_launch_description():
         )
 
         # MoveIt capabilities
-        move_group_capabilities = {"capabilities": "move_group/ExecuteTaskSolutionCapability"}
+        move_group_capabilities = {"capabilities": ""}
 
         # Create move_group node
         start_move_group_node_cmd = Node(

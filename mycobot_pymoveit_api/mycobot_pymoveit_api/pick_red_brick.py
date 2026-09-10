@@ -64,6 +64,7 @@ DETECT_RETRIES    = 3       # retries for initial detection
 # ─── Camera ───
 CAM_INDEX = 0
 WIN_NAME  = "Visual Servo"
+HEADLESS  = False   # auto-set True in main() if OpenCV has no GUI backend
 
 # ─── Calibration file (at repo root, two levels above this script) ───
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -256,6 +257,8 @@ def draw_overlay(img, status_text="", brick_uv=None, robot_xy=None):
 
 def show_frame(img, status_text="", brick_uv=None, robot_xy=None, wait_ms=1):
     """Draw overlay and display frame. Returns key pressed (or -1)."""
+    if HEADLESS:
+        return -1
     disp = img.copy()
     draw_overlay(disp, status_text, brick_uv, robot_xy)
     cv2.imshow(WIN_NAME, disp)
@@ -473,9 +476,14 @@ def visual_servo_pick(cap):
 # ═══════════════════════  MAIN  ═══════════════════════
 
 def main():
+    global HEADLESS
     load_cfg()
 
-    cv2.namedWindow(WIN_NAME, cv2.WINDOW_NORMAL | cv2.WINDOW_GUI_EXPANDED)
+    try:
+        cv2.namedWindow(WIN_NAME, cv2.WINDOW_NORMAL | cv2.WINDOW_GUI_EXPANDED)
+    except cv2.error:
+        HEADLESS = True
+        print("[GUI] OpenCV has no display backend - running HEADLESS (auto-start on brick detection).")
     cap = cv2.VideoCapture(CAM_INDEX)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open camera index {CAM_INDEX}")
@@ -518,6 +526,12 @@ def main():
             key = show_frame(frame, "PREVIEW - 's'=start  'q'=quit",
                              brick_uv=brick_uv, robot_xy=robot_xy, wait_ms=30)
 
+            if HEADLESS:
+                # No keypress possible: auto-start once the brick is detected.
+                if robot_xy is not None:
+                    print(f"[START] Headless auto-start - brick detected at {robot_xy}.")
+                    break
+                continue
             if key == ord('q'):
                 print("[QUIT] User cancelled.")
                 return
@@ -532,13 +546,15 @@ def main():
         else:
             print("\n*** Pick did not succeed. ***")
 
-        # Hold the window open until user presses a key
-        print("[DONE] Press any key in the camera window to exit.")
-        cv2.waitKey(0)
+        # Hold the window open until user presses a key (skip when headless)
+        if not HEADLESS:
+            print("[DONE] Press any key in the camera window to exit.")
+            cv2.waitKey(0)
 
     finally:
         cap.release()
-        cv2.destroyAllWindows()
+        if not HEADLESS:
+            cv2.destroyAllWindows()
         print("[CAM] Camera released.")
 
 
