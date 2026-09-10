@@ -50,6 +50,19 @@ $ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_moveit_api
 - Overhead camera at `/dev/video0`, gripper camera at `/dev/video2`
 - Camera topics: `/camera/overhead/image_raw`, `/camera/gripper/image_raw`
 
+### Option D: Arm + cameras only (MoveIt on another machine)
+Launches ros2_control, controllers, `sync_plan` (serial forwarding), and USB
+cameras — but **not** MoveIt (`move_group`) or the Flask API. Run MoveIt on
+your remote machine; it will connect to the controllers here over DDS.
+
+```bash
+$ bash ~/ros2_ws/src/mycobot_ros2/mycobot_bringup/scripts/mycobot_280_arm_camera.sh
+```
+
+**Requirements for Option D:**
+- Same as Option C (real hardware + v4l2_camera)
+- Remote machine must be on the same DDS domain (default domain ID 0)
+
 ### Pick-and-place demos
 
 ```bash
